@@ -30,6 +30,8 @@ colima start --cpu 6 --memory 12 --disk 60 --vm-type vz
 
 If Docker Desktop is also installed, `docker context use colima` makes sure kind uses Colima.
 
+**Docker Desktop works too** if `preflight.sh` reports the `openvswitch` module present (it was on a recent Docker Desktop for Apple Silicon). Set Settings › Resources › Memory to 12 GB. Docker Desktop doesn't expose `/dev/kvm`, so VMs run in emulation; Colima with `--nested-virtualization` is the faster option on M3 or newer.
+
 ## 2. Check, then bring the platform up
 
 ```sh

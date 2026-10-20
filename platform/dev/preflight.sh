@@ -14,10 +14,15 @@ command -v virtctl >/dev/null && pass "virtctl" || warn "virtctl missing (option
 echo "Container runtime"
 if ! docker info >/dev/null 2>&1; then fail "docker is not running (start Colima or Docker Desktop)"; exit 1; fi
 ctx=$(docker context show 2>/dev/null); pass "docker context: $ctx"
-arch=$(docker info --format '{{.Architecture}}'); cpus=$(docker info --format '{{.NCPU}}'); mem=$(( $(docker info --format '{{.MemTotal}}') / 1024 / 1024 / 1024 ))
-pass "runtime VM: $arch, $cpus CPUs, ${mem} GiB"
+arch=$(docker info --format '{{.Architecture}}'); cpus=$(docker info --format '{{.NCPU}}'); mib=$(( $(docker info --format '{{.MemTotal}}') / 1024 / 1024 ))
+pass "runtime VM: $arch, $cpus CPUs, $(( mib / 1024 )).$(( mib % 1024 * 10 / 1024 )) GiB usable"
 [ "$cpus" -ge 4 ] || fail "give the runtime VM at least 4 CPUs (6 or more is better)"
-[ "$mem" -ge 8 ] || fail "give the runtime VM at least 8 GiB memory (12 is better)"
+# A VM given "12 GB" reports a little less to the kernel, so compare against slightly lower numbers.
+if [ "$mib" -lt 7600 ]; then
+  fail "give the runtime VM at least 8 GB memory, 12 GB recommended (Docker Desktop: Settings > Resources > Memory; Colima: colima start --memory 12)"
+elif [ "$mib" -lt 11400 ]; then
+  warn "8 GB works for dev-lab, but 12 GB leaves room for KubeVirt, Kube-OVN and the VMs"
+fi
 case "$arch" in aarch64|arm64) echo "export XFOUNDRY_ARCH=arm64" > .arch ;; *) echo "export XFOUNDRY_ARCH=amd64" > .arch ;; esac
 pass "$(cat .arch)"
 
