@@ -23,11 +23,13 @@ Built:
 - the Nirvana client;
 - the apply gate and the CLI.
 
-28 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
+36 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
 
 The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
 
-**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). `examples/dev-lab.yaml` is the environment to try first.
+**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). `examples/dev-lab.yaml` is the environment to try first, and `xfoundry run` does the whole loop in one command.
+
+Each environment gets its own Kube-OVN VPC: isolated from the cluster and other environments, with traffic between its networks routed through its router or firewall.
 
 Not built yet:
 - the cloud platform cluster;

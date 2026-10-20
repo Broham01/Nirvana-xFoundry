@@ -23,7 +23,7 @@ Merged 2026-10-20 (`1403379`). Update the Mac from inside the app; the update ru
 
 **Exit:** `dev-lab` applied through an approved Nirvana plan; VMs boot and route through `rt01`; a re-plan against a collected snapshot shows no changes.
 
-Next networking step: a Kube-OVN VPC per environment, so traffic between subnets must go through the router or firewall.
+Built: a Kube-OVN VPC per environment; traffic between subnets is rerouted through the router or firewall; `xfoundry run` does the whole loop in one command.
 
 ## 2b. Phase 0: cloud platform cluster
 

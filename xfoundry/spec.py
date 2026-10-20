@@ -164,5 +164,17 @@ def check(data: dict) -> dict:
         if c.get('network') and c['network'] not in gateways: problems.append(f"Cluster {c['name']} uses network {c['network']}, which is not defined.")
         c.setdefault('workers', 2)
 
+    # Which router or firewall joins each pair of networks: inside the environment's VPC, traffic between two
+    # networks goes through that appliance, and networks no appliance joins cannot reach each other.
+    joins = []
+    for a in spec.get('appliances', []):
+        if a['role'] not in ('router', 'firewall'): continue
+        addr = {i['network']: i.get('address') for i in a['interfaces']}
+        for src in addr:
+            for dst in addr:
+                if src != dst and addr[src]:
+                    joins.append({'from': src, 'to': dst, 'via': a['name'], 'next_hop': addr[src]})
+    spec['_routes'] = joins
+
     if problems: raise SpecError(problems)
     return spec

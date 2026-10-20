@@ -49,12 +49,19 @@ export NIRVANA_URL=http://localhost:8000 NIRVANA_TOKEN=nvt_...
 export XFOUNDRY_KUBE_CONTEXT=kind-xfoundry
 export NIRVANA_DIR=~/path/to/Nirvana            # wherever your Nirvana checkout is
 
-platform/dev/snapshot.sh                        # writes platform/dev/dev.snapshot.json
-xfoundry plan examples/dev-lab.yaml --snapshot platform/dev/dev.snapshot.json
-#   → review and approve in Nirvana (Changes)
-platform/dev/snapshot.sh                        # fresh snapshot for the gate
-xfoundry apply examples/dev-lab.yaml --snapshot platform/dev/dev.snapshot.json
+xfoundry run examples/dev-lab.yaml
 ```
+
+`run` does the whole loop:
+1. snapshots the cluster with Nirvana's collector;
+2. submits the plan;
+3. waits (up to 30 minutes) while you review and approve it in Nirvana › Changes;
+4. snapshots again;
+5. applies only if the gate passes.
+
+If the plan is sent back, nothing changes. If the cluster changed while you were reviewing, nothing changes and it asks you to re-plan.
+
+The same steps by hand: `xfoundry collect`, `xfoundry plan --snapshot`, `xfoundry status`, `xfoundry apply --snapshot`.
 
 Then watch it come up:
 
@@ -66,8 +73,8 @@ virtctl console -n xf-dev-lab app-01            # CirrOS login: cirros / gocubsg
 After that, take a snapshot again and plan the same spec: Nirvana should show every object as unchanged, against a collected snapshot with no Modelled badge.
 
 Day 2:
-- **Scale down:** set `count: 1`, then `xfoundry plan --action prune` and `xfoundry apply --action prune` (Nirvana flags the disk that will be lost).
-- **Remove everything:** `--action destroy`.
+- **Scale down:** set `count: 1`, then `xfoundry run examples/dev-lab.yaml --action prune` (Nirvana flags the disk that will be lost).
+- **Remove everything:** `xfoundry run examples/dev-lab.yaml --action destroy`.
 
 ## 4. What to check once it's running
 
@@ -75,7 +82,9 @@ Day 2:
 - **Static addresses.** `lb01` has `10.70.10.10`: `kubectl -n xf-dev-lab get ips`.
 - **HAProxy.** `kubectl -n xf-dev-lab port-forward deploy/lb01 8404` and open `http://localhost:8404/stats`.
 
-Known gap: in Kube-OVN's default VPC, traffic between two environment subnets can also go through OVN's own router, so `rt01` is not yet forced into the path. An xFoundry VPC per environment with policy routes is the next networking step ([ADR 0003](../../docs/adr/0003-local-dev-platform.md)).
+- **Isolation.** The environment has its own VPC: `kubectl get vpc xf-dev-lab -o yaml` shows two `reroute` policies, one each way through `rt01`. The VMs cannot reach pods on the cluster network or another environment's subnets.
+
+Nirvana shows the VPC as "1 not verified" because its planner doesn't know the `Vpc` kind yet ([ADR 0003](../../docs/adr/0003-local-dev-platform.md)). The plan is still complete and can be approved.
 
 ## Troubleshooting
 

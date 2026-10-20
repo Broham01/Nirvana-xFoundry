@@ -24,15 +24,15 @@ LAST_APPLIED = 'kubectl.kubernetes.io/last-applied-configuration'
 PLATFORM_CRDS = [
     'kubevirt.io/v1/VirtualMachine', 'kubevirt.io/v1/VirtualMachineInstance', 'kubevirt.io/v1/VirtualMachinePool',
     'cdi.kubevirt.io/v1beta1/DataVolume', 'snapshot.kubevirt.io/v1beta1/VirtualMachineSnapshot',
-    'kubeovn.io/v1/Subnet', 'kubeovn.io/v1/Vlan', 'kubeovn.io/v1/ProviderNetwork',
+    'kubeovn.io/v1/Subnet', 'kubeovn.io/v1/Vlan', 'kubeovn.io/v1/Vpc', 'kubeovn.io/v1/ProviderNetwork',
     'k8s.cni.cncf.io/v1/NetworkAttachmentDefinition', 'argoproj.io/v1alpha1/Application',
 ]
 # Scope of each platform CRD, as Nirvana's collector records it (crd_scopes, Nirvana ADR 0013 follow-up).
 CRD_SCOPES = {'VirtualMachine': 'Namespaced', 'VirtualMachineInstance': 'Namespaced', 'VirtualMachinePool': 'Namespaced',
-              'DataVolume': 'Namespaced', 'VirtualMachineSnapshot': 'Namespaced', 'Subnet': 'Cluster', 'Vlan': 'Cluster',
+              'DataVolume': 'Namespaced', 'VirtualMachineSnapshot': 'Namespaced', 'Subnet': 'Cluster', 'Vlan': 'Cluster', 'Vpc': 'Cluster',
               'ProviderNetwork': 'Cluster', 'NetworkAttachmentDefinition': 'Namespaced', 'Application': 'Namespaced'}
 # Custom resources the in-cluster collector must be asked for (collect-k8s-snapshot.py --custom ...).
-COLLECT_CUSTOM = ['virtualmachines.kubevirt.io', 'datavolumes.cdi.kubevirt.io', 'subnets.kubeovn.io', 'vlans.kubeovn.io',
+COLLECT_CUSTOM = ['virtualmachines.kubevirt.io', 'datavolumes.cdi.kubevirt.io', 'subnets.kubeovn.io', 'vlans.kubeovn.io', 'vpcs.kubeovn.io',
                   'network-attachment-definitions.k8s.cni.cncf.io', 'applications.argoproj.io']
 PLATFORM_NAMESPACES = ['default', 'kube-system', 'kubevirt', 'cdi', 'kube-ovn', 'argocd', 'harbor', 'netbox', 'xfoundry-system']
 
@@ -58,7 +58,9 @@ def _base(spec: dict, label: str, at: datetime, nodes: list[dict] | None) -> dic
 def _public(spec: dict) -> dict:
     """The spec as the user wrote it, without the internal _reserved lists."""
     out = json.loads(json.dumps(spec))
-    for n in out.get('networks', []): n.pop('_reserved', None)
+    out.pop('_routes', None)
+    for n in out.get('networks', []):
+        for k in [k for k in n if k.startswith('_')]: n.pop(k)
     return out
 
 

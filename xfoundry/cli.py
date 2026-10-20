@@ -8,6 +8,9 @@
   xfoundry status SPEC [--action A]          show Nirvana's decision on the latest submitted plan
   xfoundry apply SPEC [--action A] --snapshot FRESH [--dry-run]
                                              run the gate, then kubectl apply/delete
+  xfoundry collect [-o FILE]                 snapshot the cluster with Nirvana's collector (NIRVANA_DIR)
+  xfoundry run SPEC [--action A]             all of it: collect, plan, wait for approval in Nirvana,
+                                             collect again, gate, apply
 
 Actions: create (default; create or change to match the spec), prune (delete objects the spec no longer has,
 for example after scaling a VM group down), destroy (delete the whole environment).
@@ -20,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -140,7 +144,7 @@ def cmd_apply(a):
         print('Refused. Nothing was changed:', *[f'  - {r}' for r in result.reasons], sep='\n')
         raise SystemExit(2)
     verb = ['delete', '--ignore-not-found', '--wait=false'] if rec['delete'] else ['apply']
-    context = a.context or os.environ.get('XFOUNDRY_KUBE_CONTEXT')
+    context = _context(a)
     cmd = ['kubectl', *(['--context', context] if context else []), *verb, '-f', '-'] + (['--dry-run=server'] if a.dry_run else [])
     print('Gate passed. Running:', ' '.join(cmd))
     try:
@@ -154,6 +158,49 @@ def cmd_apply(a):
         else: ledger['applied_manifest'] = to_yaml(render(spec))
         ledger['plans'].pop(a.action)   # a plan is used once
         write_ledger(spec, ledger)
+
+
+def _context(a) -> str | None:
+    return getattr(a, 'context', None) or os.environ.get('XFOUNDRY_KUBE_CONTEXT')
+
+
+def collect(output: str, context: str | None, collector: str | None = None) -> str:
+    """Run Nirvana's read-only collector (scripts/collect-k8s-snapshot.py) with the custom resources xFoundry renders."""
+    script = collector or (Path(os.environ['NIRVANA_DIR']) / 'scripts/collect-k8s-snapshot.py' if os.environ.get('NIRVANA_DIR') else None)
+    if not script or not Path(script).exists():
+        raise SystemExit('Set NIRVANA_DIR to your Nirvana checkout (or pass --collector) so xFoundry can use its snapshot collector.')
+    cmd = [sys.executable, str(script), '-o', output, '--name', context or 'xfoundry']
+    if context: cmd += ['--context', context]
+    for resource in model.COLLECT_CUSTOM: cmd += ['--custom', resource]
+    proc = subprocess.run(cmd)
+    if proc.returncode: raise SystemExit(f'The collector failed (exit {proc.returncode}). Nothing was changed.')
+    return output
+
+
+def cmd_collect(a):
+    collect(a.output, _context(a), a.collector)
+
+
+def cmd_run(a):
+    """The whole loop for one action. Stops without changing anything if the plan is sent back, times out,
+    or the gate refuses."""
+    LEDGER_DIR.mkdir(exist_ok=True)
+    spec = load(a.spec)
+    before = collect(str(LEDGER_DIR / f"{spec['name']}.before.snapshot.json"), _context(a), a.collector)
+    cmd_plan(argparse.Namespace(spec=a.spec, action=a.action, snapshot=before, model=False))
+    rec = read_ledger(spec)['plans'][a.action]
+    client, deadline, shown = Nirvana(), time.monotonic() + a.wait * 60, None
+    print(f'Waiting up to {a.wait} min for a decision in Nirvana (Changes). Ctrl-C stops waiting; nothing is applied.')
+    while True:
+        plan = client.get_plan(rec['plan_id'])
+        if plan['state'] != shown: print(f"  plan {plan['state']}"); shown = plan['state']
+        if plan['state'] == 'approved': break
+        if plan['state'] == 'changes_requested':
+            raise SystemExit('Sent back in Nirvana' + (f": {plan['decision_note']}" if plan.get('decision_note') else '') + '. Nothing was changed.')
+        if time.monotonic() > deadline: raise SystemExit('No decision in time. Nothing was changed; `xfoundry apply` can pick it up later.')
+        time.sleep(a.poll)
+    fresh = collect(str(LEDGER_DIR / f"{spec['name']}.fresh.snapshot.json"), _context(a), a.collector)
+    cmd_apply(argparse.Namespace(spec=a.spec, action=a.action, snapshot=fresh, context=_context(a), dry_run=a.dry_run))
 
 
 def main(argv: list[str] | None = None):
@@ -171,6 +218,14 @@ def main(argv: list[str] | None = None):
     s.add_argument('--snapshot', required=True, help='fresh snapshot of the target, from collect-k8s-snapshot.py')
     s.add_argument('--context', help='kubectl context to apply to (default: XFOUNDRY_KUBE_CONTEXT, else the current context)')
     s.add_argument('--dry-run', action='store_true'); s.set_defaults(fn=cmd_apply)
+    s = sub.add_parser('collect'); s.add_argument('-o', '--output', default='cluster.snapshot.json')
+    s.add_argument('--context'); s.add_argument('--collector', help="path to Nirvana's collect-k8s-snapshot.py (default: $NIRVANA_DIR/scripts/...)")
+    s.set_defaults(fn=cmd_collect)
+    s = sub.add_parser('run'); s.add_argument('spec'); s.add_argument('--action', choices=ACTIONS, default='create')
+    s.add_argument('--context'); s.add_argument('--collector')
+    s.add_argument('--wait', type=int, default=30, help='minutes to wait for a decision (default 30)')
+    s.add_argument('--poll', type=int, default=5, help='seconds between checks (default 5)')
+    s.add_argument('--dry-run', action='store_true'); s.set_defaults(fn=cmd_run)
     a = p.parse_args(argv)
     try:
         a.fn(a)

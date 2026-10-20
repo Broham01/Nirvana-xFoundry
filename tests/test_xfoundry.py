@@ -87,7 +87,7 @@ def test_built_model_is_a_nirvana_kubernetes_model():
     k = snap['kubernetes']
     assert 'xf-edge-lab' in {n['name'] for n in k['namespaces']}
     assert {'VirtualMachine', 'Deployment', 'NetworkAttachmentDefinition'} <= {o['kind'] for o in k['objects']}
-    assert {o['id'] for o in k['objects'] if not o['namespace']} == {'-/Subnet/xf-edge-lab-wan', '-/Subnet/xf-edge-lab-dmz', '-/Subnet/xf-edge-lab-app'}
+    assert {o['id'] for o in k['objects'] if not o['namespace']} == {'-/Vpc/xf-edge-lab', '-/Subnet/xf-edge-lab-wan', '-/Subnet/xf-edge-lab-dmz', '-/Subnet/xf-edge-lab-app'}
     assert k['crd_scopes']['Subnet'] == 'Cluster'
     assert len(k['pods']) == 4                               # 3 running VMs + 1 haproxy pod
     assert 'kubevirt.io/v1/VirtualMachine' in k['crds']      # so Nirvana plans VMs instead of reporting a gap
@@ -215,3 +215,40 @@ def test_mirror_prefixes_images(monkeypatch, arm64):
     monkeypatch.setattr(catalog, 'MIRROR', 'registry.local:5000')
     lb = next(o for o in render(load(DEV)) if o['metadata']['name'] == 'lb01' and o['kind'] == 'Deployment')
     assert lb['spec']['template']['spec']['containers'][0]['image'] == 'registry.local:5000/docker.io/library/haproxy:3.4.7'
+
+
+# ---- one VPC per environment
+
+def vpc_of(objects):
+    return next(o for o in objects if o['kind'] == 'Vpc')
+
+
+def test_environment_gets_its_own_vpc_and_subnets_join_it(arm64):
+    objects = render(load(DEV))
+    vpc = vpc_of(objects)
+    assert vpc['metadata']['name'] == 'xf-dev-lab' and objects.index(vpc) < next(i for i, o in enumerate(objects) if o['kind'] == 'Subnet')
+    assert all(s['vpc'] == 'xf-dev-lab' for s in subnets(objects).values())
+
+
+def test_traffic_between_networks_is_rerouted_through_the_router(arm64):
+    routes = vpc_of(render(load(DEV)))['spec']['policyRoutes']
+    assert {'priority': 31000, 'action': 'reroute', 'nextHopIP': '10.70.20.1',
+            'match': 'ip4.src == 10.70.20.0/24 && ip4.dst == 10.70.10.0/24'} in routes
+    assert {'priority': 31000, 'action': 'reroute', 'nextHopIP': '10.70.10.1',
+            'match': 'ip4.src == 10.70.10.0/24 && ip4.dst == 10.70.20.0/24'} in routes
+    assert not [r for r in routes if r['action'] == 'drop']      # rt01 joins the only pair
+
+
+def test_networks_no_router_joins_cannot_reach_each_other(arm64):
+    spec = yaml.safe_load(DEV.read_text())
+    spec['networks'].append({'name': 'isolated', 'cidr': '10.70.30.0/24'})
+    routes = vpc_of(render(check(spec)))['spec']['policyRoutes']
+    drops = {r['match'] for r in routes if r['action'] == 'drop'}
+    assert 'ip4.src == 10.70.30.0/24 && ip4.dst == 10.70.20.0/24' in drops
+    assert 'ip4.src == 10.70.10.0/24 && ip4.dst == 10.70.30.0/24' in drops
+    assert len(drops) == 4
+
+
+def test_load_balancers_do_not_route():
+    routes = vpc_of(render(load(EXAMPLE)))['spec']['policyRoutes']
+    assert {r['nextHopIP'] for r in routes if r['action'] == 'reroute'} == {'10.60.0.2', '10.60.10.1', '10.60.20.1'}   # fw01 only

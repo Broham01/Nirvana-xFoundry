@@ -43,15 +43,43 @@ def _ip_annotations(ns: str, interfaces: list[dict]) -> dict:
     return {f"{_nad(i['network'])}.{ns}.ovn.kubernetes.io/ip_address": i['address'] for i in interfaces if i.get('address')}
 
 
+POLICY_PRIORITY = {'reroute': 31000, 'drop': 30000}
+
+
+def _vpc(spec: dict, ns: str) -> dict:
+    """One Kube-OVN VPC per environment: its networks are isolated from the cluster network and from other
+    environments. Between two of its networks, traffic is rerouted to the router or firewall that joins them;
+    networks that no appliance joins cannot reach each other. (Workloads that use the appliance as their default
+    route never reach the VPC router at all; these policies catch everything that does.)"""
+    cidr = {n['name']: n['cidr'] for n in spec['networks']}
+    routes, joined = [], set()
+    first = {}
+    for r in spec['_routes']:
+        key = (r['from'], r['to'])
+        if key in first: continue            # the first appliance listed wins for a pair
+        first[key] = r
+        joined.add(key)
+        routes.append({'priority': POLICY_PRIORITY['reroute'], 'action': 'reroute', 'nextHopIP': r['next_hop'],
+                       'match': f"ip4.src == {cidr[r['from']]} && ip4.dst == {cidr[r['to']]}"})
+    names = [n['name'] for n in spec['networks']]
+    for src in names:
+        for dst in names:
+            if src != dst and (src, dst) not in joined:
+                routes.append({'priority': POLICY_PRIORITY['drop'], 'action': 'drop',
+                               'match': f"ip4.src == {cidr[src]} && ip4.dst == {cidr[dst]}"})
+    spec_body = {'policyRoutes': routes} if routes else {}
+    return {'apiVersion': 'kubeovn.io/v1', 'kind': 'Vpc', 'metadata': {'name': ns, 'labels': _labels(spec, 'network')}, 'spec': spec_body}
+
+
 def _networks(spec: dict, ns: str) -> list[dict]:
-    out = []
+    out = [_vpc(spec, ns)]
     for n in spec['networks']:
         provider = f"{_nad(n['name'])}.{ns}.ovn"
         if 'vlan' in n:
             out.append({'apiVersion': 'kubeovn.io/v1', 'kind': 'Vlan',
                         'metadata': {'name': f"{ns}-{n['name']}", 'labels': _labels(spec, 'network')},
                         'spec': {'id': n['vlan'], 'provider': catalog.UNDERLAY}})
-        subnet = {'protocol': 'IPv4', 'provider': provider, 'cidrBlock': n['cidr'], 'gateway': n['_ovn_gateway'],
+        subnet = {'protocol': 'IPv4', 'provider': provider, 'vpc': ns, 'cidrBlock': n['cidr'], 'gateway': n['_ovn_gateway'],
                   'excludeIps': n['_reserved'], 'enableDHCP': True}
         if n['_router']:
             # The appliance is the default route; OVN's router keeps a separate address on this subnet.

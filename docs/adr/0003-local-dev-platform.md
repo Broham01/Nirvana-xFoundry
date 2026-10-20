@@ -28,5 +28,12 @@ The goal is a cloud platform (amd64 servers with KVM). Before paying for servers
 
 - `dev-lab` (FRR router, HAProxy, two CirrOS VMs) plans in Nirvana with every object modelled and 0 gaps. A re-apply against the built model "looks clean", and scaling down flags the lost disk.
 - **Not proven yet:** a real run on the Mac. This workspace cannot reach Docker Hub or Quay, so the scripts are linted and the manifests are planned, but no cluster was booted here.
-- **Known gap:** in Kube-OVN's default VPC, environment subnets are also joined by OVN's router, so traffic between them can bypass the appliance. Next: a Kube-OVN `Vpc` per environment with policy routes through the router or firewall.
+- **Isolation (added 2026-10-20):** each environment gets its own Kube-OVN `Vpc` (`xf-<name>`), and its subnets join it.
+  - Environments are cut off from the cluster network and from each other.
+  - Traffic between two of an environment's networks is rerouted (priority 31000) to the router or firewall that joins them.
+  - Networks that no router or firewall joins are dropped from each other (priority 30000).
+  - Load balancers never route.
+  - Kube-OVN v1.16.14 supports attachment subnets in a custom VPC: the pod controller sets the logical router per attachment from `subnet.Spec.Vpc`.
+  - Pods keep their primary interface on the cluster network, for image pulls and DNS.
+- **Nirvana follow-up (proposed, not made):** Nirvana's planner treats `kubeovn.io/v1 Vpc` as a custom resource with `partial` confidence, so a create plan reads "1 not verified". The plan is still complete and can be approved. Adding `Vpc` to the planner's known network kinds, with a finding when policy routes change, would close it. Nirvana is left untouched while other work happens there.
 - **Cloud later (amd64):** Talos on servers with KVM. That brings back OPNsense and VyOS, and adds CSI snapshots, Harbor, NetBox and OpenBao. Kube-OVN ships Talos support (`talos/` in its repository at the pinned tag).

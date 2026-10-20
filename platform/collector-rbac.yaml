@@ -6,7 +6,7 @@
 # Run the collector with the custom resources xFoundry renders:
 #   collect-k8s-snapshot.py --name platform -o platform.snapshot.json \
 #     --custom virtualmachines.kubevirt.io --custom datavolumes.cdi.kubevirt.io \
-#     --custom subnets.kubeovn.io --custom vlans.kubeovn.io \
+#     --custom subnets.kubeovn.io --custom vlans.kubeovn.io --custom vpcs.kubeovn.io \
 #     --custom network-attachment-definitions.k8s.cni.cncf.io --custom applications.argoproj.io
 apiVersion: v1
 kind: Namespace
@@ -53,7 +53,7 @@ rules:
   resources: [datavolumes]
   verbs: [get, list]
 - apiGroups: [kubeovn.io]
-  resources: [subnets, vlans]
+  resources: [subnets, vlans, vpcs]
   verbs: [get, list]
 - apiGroups: [k8s.cni.cncf.io]
   resources: [network-attachment-definitions]
