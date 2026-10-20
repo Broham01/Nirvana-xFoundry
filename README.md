@@ -60,6 +60,7 @@ Scale a VM group down by editing `count`, then `plan --action prune` / `apply --
 
 ## Documents
 
+- [docs/integration](docs/integration/CONTRACT.md): the contract with Nirvana (mirrored in both repos) and the log of changes across it. Read before touching the Nirvana client, the gate, models or the spec.
 - [docs/SPEC.md](docs/SPEC.md): the shared spec.
 - [docs/ROADMAP.md](docs/ROADMAP.md): phases and order of work.
 - [ADR 0001](docs/adr/0001-foundation.md): platform and tool choices.

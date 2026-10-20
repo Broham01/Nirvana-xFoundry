@@ -1,0 +1,57 @@
+{
+  "contract": "nirvana-xfoundry",
+  "version": 1,
+  "updated": "2026-10-20",
+  "note": "Mirrored byte for byte in Broham01/Nirvana and Broham01/nirvana-xfoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
+  "nirvana_api": {
+    "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write"]},
+    "token_routes": [
+      {"method": "GET", "path": "/api/v1/snapshots", "scope": "snapshots:read"},
+      {"method": "POST", "path": "/api/v1/snapshots", "scope": "snapshots:write"},
+      {"method": "GET", "path": "/api/v1/plans", "scope": "plans:read"},
+      {"method": "GET", "path": "/api/v1/plans/{id}", "scope": "plans:read"},
+      {"method": "POST", "path": "/api/v1/plans", "scope": "plans:write"}
+    ],
+    "never_reachable_with_a_token": ["/api/v1/plans/{id}/decision", "/api/v1/tokens", "/api/v1/models", "/api/v1/projects", "/api/v1/system/update"],
+    "idempotency": "Every POST carries an Idempotency-Key. The same key with a different body is refused (409), so a key is derived from the whole request.",
+    "plan_states": ["review", "approved", "changes_requested"],
+    "plan_fields_read_by_xfoundry": ["id", "state", "status", "highs", "snapshot_id", "script", "decision_note"],
+    "plan_create_fields": ["snapshot_id", "script", "title", "file_name", "parameters"],
+    "plan_delete_parameter": {"Mode": "delete"},
+    "snapshot_fields_read_by_xfoundry": ["id"]
+  },
+  "snapshot_format": {
+    "format": "nirvana.snapshot/1",
+    "owner": "Nirvana",
+    "model_marker": {"path": "source.kind", "value": "model"},
+    "kubernetes_fields_in_gate_fingerprint": {
+      "nodes": ["name", "ready", "unschedulable"],
+      "namespaces": ["name", "labels"],
+      "objects": ["id", "spec", "labels"],
+      "crds": "list of strings"
+    },
+    "collector": "scripts/collect-k8s-snapshot.py in Nirvana; xFoundry runs it from NIRVANA_DIR and passes --custom for its custom resources"
+  },
+  "environment_spec": {
+    "format": "xfoundry.environment/1",
+    "owner": "xFoundry",
+    "schema": "contracts/environment.schema.json in nirvana-xfoundry",
+    "nirvana_use": "ADR 0012 step 3 imports this spec for Kubernetes models; Nirvana vendors the schema and does not define its own"
+  },
+  "name_pattern": {
+    "rule": "{n…} is replaced by the 1-based index padded to the number of n's; a pattern without a placeholder gives name, name-2, name-3",
+    "vectors": [
+      {"pattern": "PRD-WEB{nn}", "count": 3, "names": ["PRD-WEB01", "PRD-WEB02", "PRD-WEB03"]},
+      {"pattern": "VDI-{nnn}", "count": 2, "names": ["VDI-001", "VDI-002"]},
+      {"pattern": "VDI-W11-GOLD", "count": 1, "names": ["VDI-W11-GOLD"]},
+      {"pattern": "app", "count": 3, "names": ["app", "app-2", "app-3"]}
+    ]
+  },
+  "evidence_rule": "A plan against a model (source.kind model) can be reviewed but never applied. xFoundry's gate refuses it; Nirvana marks it Modelled.",
+  "approval_rule": "Only a person signed in to Nirvana approves. No token, scope or xFoundry code path may approve or request changes.",
+  "open_items": [
+    {"id": "power-half", "text": "power: half differs. Nirvana's vSphere model generator powers on every other VM (index 0, 2, 4…); xFoundry powers on the first half, rounded up. Agree one rule before Nirvana imports xfoundry.environment/1 (ADR 0012 step 3)."},
+    {"id": "decision-webhook", "text": "xFoundry polls GET /api/v1/plans/{id} for decisions. A webhook is not built (xFoundry ADR 0002 item 5)."},
+    {"id": "kube-ovn-vpc", "text": "Kube-OVN Vpc plans at partial confidence in Nirvana (xFoundry ADR 0002 item 7, proposed)."}
+  ]
+}
