@@ -90,7 +90,7 @@ Nirvana shows the VPC as "1 not verified" because its planner doesn't know the `
 
 ## Troubleshooting
 
-- **Kube-OVN pods crash with openvswitch errors:** the runtime VM has no `openvswitch` module. Switch to Colima.
+- **`ovs-ovn` in CrashLoopBackOff with `modprobe: Operation not permitted`:** the `openvswitch` module isn't loaded in the runtime VM (it is forgotten whenever Docker Desktop or Colima restarts). Run `up.sh` again: it loads the module and restarts the pod. If loading fails, the runtime has no such module; switch to Colima.
 - **VMs stuck in `Scheduling`:** the runtime VM is short on memory; give Colima 12 GiB.
 - **VMs slow to boot:** expected in emulation; CirrOS takes a minute or two.
 - **`DataVolume` stuck importing:** check `kubectl -n xf-dev-lab logs -l app=containerized-data-importer`; the image must have an arm64 variant (preflight checks the defaults).

@@ -39,6 +39,22 @@ else
 fi
 kubectl config use-context "$CTX" >/dev/null
 
+step "openvswitch kernel module (runtime VM)"
+# Pods may not load kernel modules, and the runtime VM forgets loaded modules when it restarts (for example after a
+# memory change in Docker Desktop), so load it here on every run, from a privileged helper in the VM's own namespaces.
+if docker run --rm --privileged --pid=host docker.io/library/alpine:3.22 nsenter -t 1 -m -u -n -i -- \
+     sh -c 'modprobe openvswitch 2>/dev/null; [ -d /sys/module/openvswitch ]'; then
+  echo "loaded"
+else
+  echo "Could not load the openvswitch module in the runtime VM. Kube-OVN cannot run without it."
+  echo "Use Colima instead: colima start --cpu 6 --memory 12 --disk 60 --vm-type vz"
+  exit 1
+fi
+if k -n kube-system get pod -l app=ovs -o name 2>/dev/null | grep -q .; then
+  # An ovs-ovn pod that crashed before the module was loaded backs off for minutes; restart it now.
+  k -n kube-system delete pod -l app=ovs --wait=false >/dev/null
+fi
+
 step "Kube-OVN $KUBE_OVN_VERSION (CNI, Open vSwitch)"
 if k -n kube-system get deploy kube-ovn-controller >/dev/null 2>&1; then echo "installed"
 else
