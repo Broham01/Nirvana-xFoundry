@@ -30,3 +30,21 @@ export XFOUNDRY_KUBE_CONTEXT=$CTX
 export XFOUNDRY_ARCH=$arch
 ENV
 }
+
+# Wait for a condition while showing progress every 15 s: the resource's phase and its namespace's pods.
+# wait_for <namespace> <resource> <condition> <minutes>
+wait_for() {
+  local ns=$1 res=$2 cond=$3 mins=$4 end=$(( $(date +%s) + $4 * 60 ))
+  while ! k -n "$ns" wait "$res" --for "condition=$cond" --timeout=15s >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "$end" ]; then
+      echo "  still not $cond after $mins min. Pods in $ns:"; k -n "$ns" get pods 2>&1 | sed 's/^/    /'
+      echo "  Recent events:"; k -n "$ns" get events --sort-by=.lastTimestamp 2>&1 | tail -8 | sed 's/^/    /'
+      return 1
+    fi
+    phase=$(k -n "$ns" get "$res" -o jsonpath='{.status.phase}' 2>/dev/null)
+    pods=$(k -n "$ns" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); t++; if (a[1]==a[2] && $3=="Running") r++} END {printf "%d/%d pods ready", r, t}')
+    pulling=$(k -n "$ns" get pods --no-headers 2>/dev/null | grep -cE 'ContainerCreating|PodInitializing|Init:' || true)
+    printf '  %s  %s%s%s\n' "$(date +%H:%M:%S)" "${phase:-starting}" "${pods:+ · $pods}" "$([ "$pulling" -gt 0 ] && echo " · $pulling pulling images/starting")"
+  done
+  echo "  $cond"
+}

@@ -96,12 +96,13 @@ node=$(kind get nodes --name "$KIND_CLUSTER" | head -1)
 if docker exec "$node" test -c /dev/kvm; then emu=false; echo "/dev/kvm found: hardware virtualization"
 else emu=true; echo "no /dev/kvm: emulation (VMs are slow; fine for functionality)"; fi
 k -n kubevirt patch kubevirt kubevirt --type merge -p "{\"spec\":{\"configuration\":{\"developerConfiguration\":{\"useEmulation\":$emu}}}}"
-k -n kubevirt wait kv kubevirt --for condition=Available --timeout=15m
+echo "First run pulls about half a gigabyte of KubeVirt images and runs node checks: usually 3–8 minutes."
+wait_for kubevirt kv/kubevirt Available 20 || exit 1
 
 step "CDI $CDI_VERSION (disk images)"
 k apply -f "https://github.com/kubevirt/containerized-data-importer/releases/download/$CDI_VERSION/cdi-operator.yaml"
 k apply -f "https://github.com/kubevirt/containerized-data-importer/releases/download/$CDI_VERSION/cdi-cr.yaml"
-k wait cdi cdi --for condition=Available --timeout=15m
+wait_for cdi cdi/cdi Available 15 || exit 1
 
 step "Snapshot collector identity (read-only)"
 k apply -f ../collector-rbac.yaml
