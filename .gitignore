@@ -6,5 +6,6 @@ __pycache__/
 *.model.json
 
 # dev platform
-platform/dev/.arch
+platform/dev/env.sh
+platform/dev/.kubeconfig
 platform/dev/*.snapshot.json

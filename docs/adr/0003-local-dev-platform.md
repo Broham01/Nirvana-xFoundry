@@ -8,7 +8,11 @@ The goal is a cloud platform (amd64 servers with KVM). Before paying for servers
 
 ## Decision
 
-- **Dev platform:** kind on Colima (Ubuntu VM: has the `openvswitch` module; nested virtualization on M3+), with the same networking and VM stack as the cloud: Kube-OVN, Multus, KubeVirt and CDI, all pinned in `platform/dev/versions.env`. `up.sh` is idempotent, and `preflight.sh` checks tools, resources, kernel modules, `/dev/kvm` and arm64 images before anything is created.
+- **Dev platform:** kind in **xFoundry's own Colima VM** (instance `xfoundry`), beside Docker Desktop, with the same networking and VM stack as the cloud: Kube-OVN, Multus, KubeVirt and CDI, all pinned in `platform/dev/versions.env`.
+  - Docker Desktop can't host it: its VM refuses to load the `openvswitch` module, which was found on the first real run.
+  - The scripts never change global state: Docker commands go through a per-process `DOCKER_CONTEXT`, and the cluster has its own kubeconfig (`platform/dev/.kubeconfig`). Nirvana, its containers and the default `kubectl` context are untouched.
+  - `up.sh` is idempotent and restarts a stopped VM and cluster; `stop.sh` frees the VM's memory.
+  - `preflight.sh` checks tools, the memory split between macOS, Docker Desktop and the VM, the kernel module, `/dev/kvm` and arm64 images.
 - **`XFOUNDRY_ARCH`** (amd64 or arm64) is a platform property:
   - it decides which appliances are allowed (OPNsense, pfSense and VyOS are amd64-only);
   - it sets the VM `architecture` and the CDI import `platform.architecture`.

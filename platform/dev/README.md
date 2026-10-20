@@ -6,7 +6,7 @@ Versions are pinned in [`versions.env`](versions.env).
 
 ## What differs from the cloud platform
 
-| | Mac (this) | Cloud (later) |
+| | Mac (this; its own Colima VM) | Cloud (later) |
 |---|---|---|
 | CPU | arm64 (Apple Silicon) | amd64 |
 | VMs | arm64 guests; emulated, or hardware-accelerated with Colima nested virtualization on M3+ | amd64 guests with KVM |
@@ -16,39 +16,45 @@ Versions are pinned in [`versions.env`](versions.env).
 
 `XFOUNDRY_ARCH` tells xFoundry which platform it is rendering for. `preflight.sh` writes it to `platform/dev/.arch`.
 
-## 1. Container runtime: Colima (recommended)
+## 1. Runs beside Docker Desktop and Nirvana
 
-Kube-OVN needs the `openvswitch` kernel module, which Colima's Ubuntu VM has. Docker Desktop's VM may not have it; `preflight.sh` checks.
+The dev platform gets **its own Linux VM**: a Colima instance named `xfoundry`. Docker Desktop keeps running Nirvana exactly as it does today, with the same containers, Postgres on `54329`, and ports `3000`, `8000` and `9001`.
+
+Nothing global changes:
+- **Docker:** the scripts send commands to xFoundry's VM through `DOCKER_CONTEXT`, for their own process only. `docker context use` is never run, so your `docker` still talks to Docker Desktop.
+- **Kubernetes:** the cluster's credentials live in `platform/dev/.kubeconfig`, not `~/.kube/config`. Your default `kubectl` context is unchanged.
+- **Memory:** this is the only shared resource. Docker Desktop needs only what Nirvana uses; the xFoundry VM takes 10 GiB by default. Set `XFOUNDRY_VM_MEMORY` (and `XFOUNDRY_VM_CPUS`) before `up.sh` to change that. `stop.sh` gives the memory back at any time.
+
+Why a separate VM: Kube-OVN needs the `openvswitch` kernel module, and Docker Desktop's VM refuses to load it (`modprobe: Operation not permitted`). Colima's Ubuntu VM loads it. On an M3 or newer Mac with macOS 15+, Colima also gives the VM nested virtualization, so KubeVirt VMs run at hardware speed.
 
 ```sh
 brew install colima docker kind kubectl virtctl
-# M3 or newer, macOS 15+: hardware-accelerated VMs
-colima start --cpu 6 --memory 12 --disk 60 --vm-type vz --nested-virtualization
-# M1/M2: VMs run in emulation (slower, still works)
-colima start --cpu 6 --memory 12 --disk 60 --vm-type vz
 ```
-
-If Docker Desktop is also installed, `docker context use colima` makes sure kind uses Colima.
-
-**Docker Desktop does not work:** its VM refuses to load the `openvswitch` kernel module (`modprobe: Operation not permitted`, even from a privileged helper), so Kube-OVN's Open vSwitch cannot start. Use Colima; you can keep Docker Desktop installed but quit it while the dev platform runs, to free its memory.
 
 ## 2. Check, then bring the platform up
 
 ```sh
-platform/dev/preflight.sh      # changes nothing; tells you what is missing
-platform/dev/up.sh             # 10–20 minutes the first time; safe to run again
+platform/dev/preflight.sh      # changes nothing; shows memory for Docker Desktop, xFoundry's VM and macOS
+platform/dev/up.sh             # starts xFoundry's VM if needed, then the cluster; 10–20 min the first time; safe to re-run
+platform/dev/stop.sh           # pause: frees the VM's memory, keeps the cluster
+platform/dev/down.sh           # delete the cluster (and optionally the VM); asks first
 ```
 
-`up.sh` creates the kind cluster `xfoundry` and installs Kube-OVN, Multus, KubeVirt (emulation switched on only when there's no `/dev/kvm`) and CDI. It also applies the read-only collector identity.
+`up.sh` does the following:
+1. starts the VM, trying nested virtualization first;
+2. loads the `openvswitch` module (the VM forgets it on every restart);
+3. creates or restarts the kind cluster `xfoundry`;
+4. installs Kube-OVN, Multus, KubeVirt and CDI;
+5. applies the collector's read-only identity;
+6. writes `platform/dev/env.sh` for your shell.
 
 ## 3. The loop
 
 Nirvana runs as usual (`http://localhost:3000`). Create a token under Account › Service tokens.
 
 ```sh
-source platform/dev/.arch                       # XFOUNDRY_ARCH=arm64
+source platform/dev/env.sh                      # this shell only: DOCKER_CONTEXT, KUBECONFIG, XFOUNDRY_ARCH, kube context
 export NIRVANA_URL=http://localhost:8000 NIRVANA_TOKEN=nvt_...
-export XFOUNDRY_KUBE_CONTEXT=kind-xfoundry
 export NIRVANA_DIR=~/path/to/Nirvana            # wherever your Nirvana checkout is
 
 xfoundry run examples/dev-lab.yaml
@@ -90,8 +96,10 @@ Nirvana shows the VPC as "1 not verified" because its planner doesn't know the `
 
 ## Troubleshooting
 
-- **`ovs-ovn` in CrashLoopBackOff with `modprobe: Operation not permitted`:** the `openvswitch` module isn't loaded in the runtime VM (it is forgotten whenever Docker Desktop or Colima restarts). Run `up.sh` again: it loads the module and restarts the pod. If loading fails, the runtime has no such module; switch to Colima.
-- **VMs stuck in `Scheduling`:** the runtime VM is short on memory; give Colima 12 GiB.
+- **`ovs-ovn` in CrashLoopBackOff with `modprobe: Operation not permitted`:** the `openvswitch` module isn't loaded in xFoundry's VM; it is forgotten whenever the VM restarts. Run `up.sh` again: it loads the module and restarts the pod.
+- **`kubectl` doesn't see the cluster:** run `source platform/dev/env.sh` in that shell first. The cluster isn't in `~/.kube/config` on purpose.
+- **Nirvana or Docker Desktop seem affected:** they shouldn't be. Check that `env -u DOCKER_CONTEXT docker context show` prints `desktop-linux`. The scripts never change it.
+- **VMs stuck in `Scheduling`:** xFoundry's VM is short on memory. Recreate it bigger: `down.sh` (say yes to deleting the VM), then `XFOUNDRY_VM_MEMORY=12 platform/dev/up.sh`.
 - **VMs slow to boot:** expected in emulation; CirrOS takes a minute or two.
 - **`DataVolume` stuck importing:** check `kubectl -n xf-dev-lab logs -l app=containerized-data-importer`; the image must have an arm64 variant (preflight checks the defaults).
-- **Start over:** `platform/dev/down.sh`, then `up.sh`.
+- **Start over:** `platform/dev/down.sh`, then `up.sh`. Docker Desktop is never touched.
