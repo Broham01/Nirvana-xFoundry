@@ -23,12 +23,14 @@ Built:
 - the Nirvana client;
 - the apply gate and the CLI.
 
-22 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
+28 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
 
 The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
 
+**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). `examples/dev-lab.yaml` is the environment to try first.
+
 Not built yet:
-- the platform cluster (phase 0);
+- the cloud platform cluster;
 - the operator;
 - the image factory;
 - Cluster API.
@@ -60,3 +62,4 @@ Scale a VM group down by editing `count`, then `plan --action prune` / `apply --
 - [docs/ROADMAP.md](docs/ROADMAP.md): phases and order of work.
 - [ADR 0001](docs/adr/0001-foundation.md): platform and tool choices.
 - [ADR 0002](docs/adr/0002-nirvana-integration.md): the plan → approve → gate → apply loop, and the Nirvana changes it needs.
+- [ADR 0003](docs/adr/0003-local-dev-platform.md): local dev platform first; architectures; routers and gateways on Kube-OVN.

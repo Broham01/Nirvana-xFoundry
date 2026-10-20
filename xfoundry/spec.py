@@ -15,6 +15,8 @@ from pathlib import Path
 import jsonschema
 import yaml
 
+from . import catalog
+
 FORMAT = 'xfoundry.environment/1'
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / 'contracts' / 'environment.schema.json'
 NUMBER = re.compile(r'\{(n+)\}')
@@ -122,6 +124,30 @@ def check(data: dict) -> dict:
             problems.append(f"Appliance {a['name']}: {a['product']} can only be a load-balancer.")
         if a['product'] in ('opnsense', 'pfsense') and a['role'] != 'firewall':
             problems.append(f"Appliance {a['name']}: {a['product']} can only be a firewall.")
+        if catalog.ARCH not in catalog.PRODUCTS[a['product']]['arch']:
+            problems.append(f"Appliance {a['name']}: {a['product']} has no {catalog.ARCH} build, so it cannot run on this platform "
+                            f"(XFOUNDRY_ARCH={catalog.ARCH}). Use it on an amd64 cluster.")
+
+    # Appliance addresses are reserved so dynamic VMs never take them (Kube-OVN still assigns a static address inside
+    # excludeIps). An appliance holding a network's gateway address is that network's router: OVN's own logical router
+    # then moves to another address, and DHCP hands out the appliance as the default route.
+    for n in spec['networks']:
+        net = nets.get(n['name'])
+        if net is None: continue
+        claimed = {}
+        for a in spec.get('appliances', []):
+            for itf in a['interfaces']:
+                if itf['network'] == n['name'] and itf.get('address'): claimed[itf['address']] = a['name']
+        n['_router'] = claimed.get(n['gateway'])
+        reserved = set(n['_reserved']) | set(claimed)
+        if n['_router']:
+            free = [h for h in reversed(list(net.hosts())) if str(h) not in reserved]
+            if not free: problems.append(f"Network {n['name']} has no free address left for OVN's gateway."); continue
+            n['_ovn_gateway'] = str(free[0])
+            reserved.add(n['_ovn_gateway'])
+        else:
+            n['_ovn_gateway'] = n['gateway']
+        n['_reserved'] = sorted(reserved, key=lambda a: int(ipaddress.IPv4Address(a)))
 
     total = 0
     for g in spec.get('vms', []):

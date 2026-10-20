@@ -13,6 +13,7 @@ which is what removes the Modelled badge legitimately (Nirvana ADR 0012 evidence
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -80,7 +81,9 @@ def built(spec: dict, at: datetime | None = None, nodes: list[dict] | None = Non
         scope_ns = meta.get('namespace', '')   # '' for cluster-scoped custom resources (Subnet, Vlan)
         k['objects'].append({'id': f"{scope_ns or '-'}/{obj['kind']}/{meta['name']}", 'kind': obj['kind'], 'api_version': obj['apiVersion'],
                              'namespace': scope_ns, 'name': meta['name'], 'labels': meta.get('labels', {}),
-                             'annotations': {**meta.get('annotations', {}), LAST_APPLIED: applied}, 'spec': obj.get('spec', {})})
+                             'annotations': {**meta.get('annotations', {}), LAST_APPLIED: applied}, 'spec': obj.get('spec', {}),
+                             **({'data_hashes': {k: hashlib.sha256(v.encode()).hexdigest()[:16] for k, v in obj.get('data', {}).items()}}
+                                if obj['kind'] == 'ConfigMap' else {})})
         spot = node_names[len(k['pods']) % len(node_names)]
         if obj['kind'] == 'VirtualMachine' and obj['spec']['runStrategy'] == 'Always':
             dom = obj['spec']['template']['spec']['domain']
@@ -95,5 +98,6 @@ def built(spec: dict, at: datetime | None = None, nodes: list[dict] | None = Non
                               'node': spot, 'phase': 'Running', 'owner': {'kind': 'Deployment', 'name': meta['name']},
                               'images': [c['image'] for c in tpl['spec']['containers']],
                               'requests': [c.get('resources', {}).get('requests', {}) for c in tpl['spec']['containers']],
-                              'refs': {'configmaps': [], 'secrets': []}})
+                              'refs': {'configmaps': sorted(v['configMap']['name'] for v in tpl['spec'].get('volumes', []) if 'configMap' in v),
+                                       'secrets': []}})
     return snap

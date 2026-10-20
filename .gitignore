@@ -4,3 +4,7 @@ __pycache__/
 .xfoundry/
 *.snapshot.json
 *.model.json
+
+# dev platform
+platform/dev/.arch
+platform/dev/*.snapshot.json

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -139,7 +140,8 @@ def cmd_apply(a):
         print('Refused. Nothing was changed:', *[f'  - {r}' for r in result.reasons], sep='\n')
         raise SystemExit(2)
     verb = ['delete', '--ignore-not-found', '--wait=false'] if rec['delete'] else ['apply']
-    cmd = ['kubectl', *verb, '-f', '-'] + (['--dry-run=server'] if a.dry_run else [])
+    context = a.context or os.environ.get('XFOUNDRY_KUBE_CONTEXT')
+    cmd = ['kubectl', *(['--context', context] if context else []), *verb, '-f', '-'] + (['--dry-run=server'] if a.dry_run else [])
     print('Gate passed. Running:', ' '.join(cmd))
     try:
         proc = subprocess.run(cmd, input=manifest, text=True)
@@ -167,6 +169,7 @@ def main(argv: list[str] | None = None):
     s = sub.add_parser('status'); s.add_argument('spec'); s.add_argument('--action', choices=ACTIONS, default='create'); s.set_defaults(fn=cmd_status)
     s = sub.add_parser('apply'); s.add_argument('spec'); s.add_argument('--action', choices=ACTIONS, default='create')
     s.add_argument('--snapshot', required=True, help='fresh snapshot of the target, from collect-k8s-snapshot.py')
+    s.add_argument('--context', help='kubectl context to apply to (default: XFOUNDRY_KUBE_CONTEXT, else the current context)')
     s.add_argument('--dry-run', action='store_true'); s.set_defaults(fn=cmd_apply)
     a = p.parse_args(argv)
     try:

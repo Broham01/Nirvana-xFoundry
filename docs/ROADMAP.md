@@ -17,9 +17,17 @@ Order of work. Each step ends with something that works end to end.
 
 The full loop ran live. Merge it, then update the Mac from inside the app.
 
-## 2. Phase 0: platform cluster
+## 2a. Dev platform on the Mac (now)
 
-Start with one node to prove it, then three.
+[platform/dev](../platform/dev/README.md): kind on Colima with Kube-OVN, Multus, KubeVirt and CDI ([ADR 0003](adr/0003-local-dev-platform.md)). `examples/dev-lab.yaml` (FRR, HAProxy, CirrOS VMs) runs the whole loop on arm64.
+
+**Exit:** `dev-lab` applied through an approved Nirvana plan; VMs boot and route through `rt01`; a re-plan against a collected snapshot shows no changes.
+
+Next networking step: a Kube-OVN VPC per environment, so traffic between subnets must go through the router or firewall.
+
+## 2b. Phase 0: cloud platform cluster
+
+amd64 servers with KVM. Start with one node to prove it, then three.
 
 - Talos Linux; Kubernetes pinned.
 - KubeVirt + CDI.

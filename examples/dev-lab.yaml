@@ -1,0 +1,41 @@
+# Dev lab for a local kind cluster on a Mac (Apple Silicon): XFOUNDRY_ARCH=arm64.
+# Everything here has an arm64 build: FRR and HAProxy as containers, CirrOS VMs (tiny, boot in emulation).
+# The firewall VMs (OPNsense, pfSense, VyOS) are x86-only and wait for the amd64 cloud platform.
+format: xfoundry.environment/1
+name: dev-lab
+description: FRR router between two subnets, HAProxy in front, two small VMs.
+owner: elfaz
+lifecycle:
+  ttl: 24h
+rules:
+  production: false
+  protect_appliances: true
+
+networks:
+  - name: front
+    cidr: 10.70.10.0/24
+    gateway: 10.70.10.1       # rt01 is this network's router
+  - name: app
+    cidr: 10.70.20.0/24
+    gateway: 10.70.20.1       # rt01 is this network's router
+
+appliances:
+  - name: rt01
+    role: router
+    product: frr
+    interfaces:
+      - {network: front, address: 10.70.10.1}
+      - {network: app, address: 10.70.20.1}
+  - name: lb01
+    role: load-balancer
+    product: haproxy
+    interfaces:
+      - {network: front, address: 10.70.10.10}
+
+vms:
+  - pattern: app-{nn}
+    count: 2
+    image: quay.io/kubevirt/cirros-container-disk-demo:v1.9.1
+    size: {cpu: 1, memory: 512Mi, disk: 1Gi}
+    networks: [app]
+    tags: [Environment/Lab]

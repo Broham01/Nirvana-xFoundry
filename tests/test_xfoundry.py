@@ -159,3 +159,59 @@ def test_gate_never_applies_a_modelled_plan():
     as_model = {**snap, 'source': {**snap['source'], 'kind': 'model'}}
     r = gate.check(plan, manifest, {**record, 'fingerprint': gate.fingerprint(as_model)}, as_model)
     assert not r.ok and any('model' in x for x in r.reasons)
+
+
+# ---- routers, arm64 dev platform, appliance configs
+
+DEV = EXAMPLE.parent / 'dev-lab.yaml'
+
+
+@pytest.fixture
+def arm64(monkeypatch):
+    from xfoundry import catalog
+    monkeypatch.setattr(catalog, 'ARCH', 'arm64')
+
+
+def subnets(objects):
+    return {o['metadata']['name']: o['spec'] for o in objects if o['kind'] == 'Subnet'}
+
+
+def test_appliance_on_gateway_becomes_router_and_ovn_moves(arm64):
+    s = subnets(render(load(DEV)))['xf-dev-lab-app']
+    assert s['gateway'] == '10.70.20.254' and s['dhcpV4Options'] == 'router=10.70.20.1' and s['enableDHCP'] is True
+    assert '10.70.20.1' in s['excludeIps'] and '10.70.20.254' in s['excludeIps']
+
+
+def test_network_without_router_keeps_ovn_gateway():
+    s = subnets(render(load(EXAMPLE)))['xf-edge-lab-wan']      # 10.60.0.1 is an upstream router, not an appliance
+    assert s['gateway'] == '10.60.0.1' and 'dhcpV4Options' not in s
+    assert '10.60.0.2' in s['excludeIps']                      # fw01's static address is reserved from dynamic use
+
+
+def test_x86_only_appliances_refused_on_arm64(arm64):
+    with pytest.raises(SpecError) as exc:
+        load(EXAMPLE)
+    assert 'opnsense has no arm64 build' in str(exc.value)
+
+
+def test_arm64_vms_import_the_right_image_variant(arm64):
+    vm = next(o for o in render(load(DEV)) if o['kind'] == 'VirtualMachine')
+    assert vm['spec']['template']['spec']['architecture'] == 'arm64'
+    assert vm['spec']['dataVolumeTemplates'][0]['spec']['source']['registry']['platform'] == {'architecture': 'arm64'}
+
+
+def test_haproxy_gets_a_starter_config_and_frr_gets_network_capabilities(arm64):
+    objects = render(load(DEV))
+    cm = next(o for o in objects if o['kind'] == 'ConfigMap')
+    assert cm['metadata']['name'] == 'lb01-config' and 'bind :8404' in cm['data']['haproxy.cfg']
+    lb = next(o for o in objects if o['kind'] == 'Deployment' and o['metadata']['name'] == 'lb01')
+    assert lb['spec']['template']['spec']['volumes'][0]['configMap']['name'] == 'lb01-config'
+    rt = next(o for o in objects if o['kind'] == 'Deployment' and o['metadata']['name'] == 'rt01')
+    assert 'NET_ADMIN' in rt['spec']['template']['spec']['containers'][0]['securityContext']['capabilities']['add']
+
+
+def test_mirror_prefixes_images(monkeypatch, arm64):
+    from xfoundry import catalog
+    monkeypatch.setattr(catalog, 'MIRROR', 'registry.local:5000')
+    lb = next(o for o in render(load(DEV)) if o['metadata']['name'] == 'lb01' and o['kind'] == 'Deployment')
+    assert lb['spec']['template']['spec']['containers'][0]['image'] == 'registry.local:5000/docker.io/library/haproxy:3.4.7'

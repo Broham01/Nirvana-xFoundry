@@ -1,0 +1,15 @@
+# Local dev platform: one node, no default CNI (Kube-OVN replaces it).
+# Pod and service ranges match Kube-OVN's defaults (10.16.0.0/16, 10.96.0.0/12);
+# environment subnets use other ranges (dev-lab: 10.70.x).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: xfoundry
+networking:
+  disableDefaultCNI: true
+  podSubnet: 10.16.0.0/16
+  serviceSubnet: 10.96.0.0/12
+nodes:
+  - role: control-plane
+    labels:
+      xfoundry.io/platform: dev
+    # up.sh adds an extraMounts entry for /dev/kvm when the runtime VM has it (Colima with nested virtualization on M3+).

@@ -51,8 +51,11 @@ def _networks(spec: dict, ns: str) -> list[dict]:
             out.append({'apiVersion': 'kubeovn.io/v1', 'kind': 'Vlan',
                         'metadata': {'name': f"{ns}-{n['name']}", 'labels': _labels(spec, 'network')},
                         'spec': {'id': n['vlan'], 'provider': catalog.UNDERLAY}})
-        subnet = {'protocol': 'IPv4', 'provider': provider, 'cidrBlock': n['cidr'], 'gateway': n['gateway'],
-                  'excludeIps': n['_reserved']}
+        subnet = {'protocol': 'IPv4', 'provider': provider, 'cidrBlock': n['cidr'], 'gateway': n['_ovn_gateway'],
+                  'excludeIps': n['_reserved'], 'enableDHCP': True}
+        if n['_router']:
+            # The appliance is the default route; OVN's router keeps a separate address on this subnet.
+            subnet['dhcpV4Options'] = f"router={n['gateway']}"
         if 'vlan' in n: subnet['vlan'] = f"{ns}-{n['name']}"
         # Kube-OVN Subnets are cluster-scoped, so the name carries the namespace.
         out.append({'apiVersion': 'kubeovn.io/v1', 'kind': 'Subnet',
@@ -78,12 +81,13 @@ def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: l
             'runStrategy': 'Always' if running else 'Halted',
             'dataVolumeTemplates': [{
                 'metadata': {'name': f'{name}-root'},
-                'spec': {'source': {'registry': {'url': f'docker://{image}'}},
+                'spec': {'source': {'registry': {'url': f'docker://{catalog.image(image)}', 'platform': {'architecture': catalog.ARCH}}},
                          'storage': {'resources': {'requests': {'storage': size['disk']}}}}}],
             'template': {
                 'metadata': {'labels': {**MANAGED, 'xfoundry.io/environment': spec['name'], 'xfoundry.io/vm': name},
                              'annotations': _ip_annotations(ns, interfaces)},
                 'spec': {
+                    'architecture': catalog.ARCH,
                     'domain': {'cpu': {'cores': size['cpu']}, 'memory': {'guest': size['memory']},
                                'devices': {'disks': [{'name': 'root', 'disk': {'bus': 'virtio'}}],
                                            'interfaces': [{'name': n['name'], 'bridge': {}} for n in nets]}},
@@ -94,11 +98,27 @@ def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: l
     }
 
 
-def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protected: bool) -> dict:
+def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protected: bool) -> list[dict]:
     name = k8s_name(a['name'])
+    product = catalog.PRODUCTS[a['product']]
     attach = ', '.join(f"{ns}/{_nad(i['network'])}" for i in a['interfaces'])
     selector = {'xfoundry.io/environment': spec['name'], 'xfoundry.io/appliance': name}
-    return {
+    container = {'name': a['product'], 'image': catalog.image(image),
+                 'resources': {'requests': {'cpu': str(size['cpu']), 'memory': size['memory']}}}
+    pod = {'containers': [container]}
+    out = []
+    if product.get('config'):
+        # A starter config so the appliance runs before Ansible configures it.
+        cm = f'{name}-config'
+        out.append({'apiVersion': 'v1', 'kind': 'ConfigMap',
+                    'metadata': {'name': cm, 'namespace': ns, 'labels': _labels(spec, a['role'], protected)},
+                    'data': {product['config']['file']: catalog.HAPROXY_STARTER}})
+        container['volumeMounts'] = [{'name': 'config', 'mountPath': product['config']['path']}]
+        pod['volumes'] = [{'name': 'config', 'configMap': {'name': cm}}]
+    if product.get('privileged_net'):
+        # A router manages routes and addresses on its interfaces.
+        container['securityContext'] = {'capabilities': {'add': ['NET_ADMIN', 'NET_RAW', 'SYS_ADMIN']}}
+    out.append({
         'apiVersion': 'apps/v1', 'kind': 'Deployment',
         'metadata': {'name': name, 'namespace': ns, 'labels': {**_labels(spec, a['role'], protected), 'xfoundry.io/product': a['product']}},
         'spec': {
@@ -108,10 +128,10 @@ def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protect
             'template': {
                 'metadata': {'labels': {**MANAGED, **selector},
                              'annotations': {'k8s.v1.cni.cncf.io/networks': attach, **_ip_annotations(ns, a['interfaces'])}},
-                'spec': {'containers': [{'name': a['product'], 'image': image,
-                                         'resources': {'requests': {'cpu': str(size['cpu']), 'memory': size['memory']}}}]}},
+                'spec': pod},
         },
-    }
+    })
+    return out
 
 
 def render(spec: dict) -> list[dict]:
@@ -136,7 +156,7 @@ def render(spec: dict) -> list[dict]:
                                {'xfoundry.io/product': a['product']},
                                {'xfoundry.io/config-source': config.get('source', 'netbox'), 'xfoundry.io/config-ref': config.get('ref', a['name'])}))
         else:
-            objects.append(_pod_appliance(spec, ns, a, image, size, protected))
+            objects += _pod_appliance(spec, ns, a, image, size, protected)
 
     for g in spec.get('vms', []):
         size = {**catalog.VM_DEFAULT_SIZE, **(g.get('size') or {})}
