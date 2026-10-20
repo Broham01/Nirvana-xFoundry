@@ -15,8 +15,7 @@ xFoundry changes a cluster only through this loop:
    - the plan's manifest hash equals both the hash about to be applied and the hash recorded;
    - the snapshot id matches;
    - the fresh snapshot's fingerprint equals the recorded one (nodes, namespaces, objects, CRDs; pods left out because they churn);
-   - the action matches.
-
+   - the action matches;
    - neither the plan's snapshot nor the fresh one is a model.
 
    Any failure means re-plan.
