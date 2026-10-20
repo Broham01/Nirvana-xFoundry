@@ -63,7 +63,11 @@ fi
 step "Kube-OVN $KUBE_OVN_VERSION (CNI, Open vSwitch)"
 if k -n kube-system get deploy kube-ovn-controller >/dev/null 2>&1; then echo "installed"
 else
-  curl -fsSL "https://raw.githubusercontent.com/kubeovn/kube-ovn/$KUBE_OVN_VERSION/dist/images/install.sh" -o /tmp/kube-ovn-install.sh
+  # Its last step ("Step 6/6") copies the kubectl-ko plugin into /usr/local/bin and runs a diagnosis; on a Mac that
+  # folder is often missing or root-owned, so the step fails after a good install. Stop the script before it.
+  curl -fsSL "https://raw.githubusercontent.com/kubeovn/kube-ovn/$KUBE_OVN_VERSION/dist/images/install.sh" \
+    | sed '/\[Step 6\/6\]/,$d' > /tmp/kube-ovn-install.sh
+  grep -q 'Step 5/6' /tmp/kube-ovn-install.sh || { echo "Kube-OVN's installer changed shape; check $KUBE_OVN_VERSION"; exit 1; }
   # install.sh talks to the current context, labels control-plane nodes kube-ovn/role=master and waits for itself,
   # but gives Open vSwitch only 120 s. On a fresh node that can be too short: wait longer, then run it again to finish
   # (it applies the same objects, so a second run is safe).
@@ -77,6 +81,7 @@ else
   fi
 fi
 k -n kube-system rollout status deploy/kube-ovn-controller --timeout=10m
+k -n kube-system rollout status ds/kube-ovn-cni --timeout=10m
 
 step "Multus $MULTUS_VERSION (extra interfaces)"
 curl -fsSL "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/$MULTUS_VERSION/deployments/multus-daemonset-thick.yml" \
