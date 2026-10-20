@@ -33,6 +33,8 @@ brew install colima docker kind kubectl virtctl
 
 ## 2. Check, then bring the platform up
 
+**Shortest path:** `platform/dev/setup-mac.sh` installs what's missing (Colima, kind, kubectl), offers to remove the old cluster an earlier attempt left in Docker Desktop, then runs `up.sh`. Or run the steps yourself:
+
 ```sh
 platform/dev/preflight.sh      # changes nothing; shows memory for Docker Desktop, xFoundry's VM and macOS
 platform/dev/up.sh             # starts xFoundry's VM if needed, then the cluster; 10–20 min the first time; safe to re-run
