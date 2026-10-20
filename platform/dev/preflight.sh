@@ -28,10 +28,11 @@ pass "$(cat .arch)"
 
 echo "Kernel (inside the runtime VM)"
 probe() { docker run --rm --privileged --pid=host docker.io/library/alpine:3.22 nsenter -t 1 -m -u -n -i -- sh -c "$1" >/dev/null 2>&1; }
+# Only a module that actually loads counts: Docker Desktop has reported one as present and then refused to load it.
 if probe '[ -d /sys/module/openvswitch ]'; then pass "openvswitch module loaded (needed by Kube-OVN)"
-elif probe 'modinfo openvswitch >/dev/null 2>&1 || find /lib/modules -name "openvswitch.ko*" 2>/dev/null | grep -q .'; then
-  pass "openvswitch module available (up.sh loads it; needed again after the runtime VM restarts)"
-else fail "no openvswitch kernel module: Kube-OVN cannot run on this runtime. Use Colima: colima start --cpu 6 --memory 12 --vm-type vz"; fi
+elif probe 'modprobe openvswitch 2>/dev/null && [ -d /sys/module/openvswitch ]'; then
+  pass "openvswitch module loads (up.sh loads it again after the runtime VM restarts)"
+else fail "the openvswitch kernel module cannot be loaded here, so Kube-OVN cannot run (Docker Desktop refuses it). Use Colima: see platform/dev/README.md"; fi
 if probe '[ -c /dev/kvm ]'; then pass "/dev/kvm present: VMs use hardware virtualization"
 else warn "no /dev/kvm: VMs run in emulation (slow but works). On an M3 or newer Mac with macOS 15+: colima start --vm-type vz --nested-virtualization"; fi
 

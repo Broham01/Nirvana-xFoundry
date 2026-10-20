@@ -30,7 +30,7 @@ colima start --cpu 6 --memory 12 --disk 60 --vm-type vz
 
 If Docker Desktop is also installed, `docker context use colima` makes sure kind uses Colima.
 
-**Docker Desktop works too** if `preflight.sh` reports the `openvswitch` module present (it was on a recent Docker Desktop for Apple Silicon). Set Settings › Resources › Memory to 12 GB. Docker Desktop doesn't expose `/dev/kvm`, so VMs run in emulation; Colima with `--nested-virtualization` is the faster option on M3 or newer.
+**Docker Desktop does not work:** its VM refuses to load the `openvswitch` kernel module (`modprobe: Operation not permitted`, even from a privileged helper), so Kube-OVN's Open vSwitch cannot start. Use Colima; you can keep Docker Desktop installed but quit it while the dev platform runs, to free its memory.
 
 ## 2. Check, then bring the platform up
 
