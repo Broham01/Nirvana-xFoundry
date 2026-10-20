@@ -7,7 +7,7 @@ Order of work. Each step ends with something that works end to end.
 - Shared spec `xfoundry.environment/1`, validator, renderer, Nirvana model projections, apply gate, CLI, tests.
 - Compatibility run against Nirvana's real Kubernetes planner.
 
-## 1. Nirvana service token and planner fixes: done, in review
+## 1. Nirvana service token and planner fixes: done, merged
 
 [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013):
 - service tokens that can never approve;
@@ -15,7 +15,7 @@ Order of work. Each step ends with something that works end to end.
 - cluster-scoped custom resources;
 - namespace annotations.
 
-The full loop ran live. Merge it, then update the Mac from inside the app.
+Merged 2026-10-20 (`1403379`). Update the Mac from inside the app; the update runs migration 0009.
 
 ## 2a. Dev platform on the Mac (now)
 

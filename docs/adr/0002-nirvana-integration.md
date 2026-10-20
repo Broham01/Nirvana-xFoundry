@@ -1,6 +1,6 @@
 # ADR 0002: Nirvana integration (plan, approve, then apply)
 
-Date: 2026-10-20 · Accepted. Nirvana items 1–4 are built in [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013); 5 is polling for now; 6 is open.
+Date: 2026-10-20 · Accepted. Nirvana items 1–4 are built and merged in [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013); 5 is polling for now; 6 is open.
 
 ## Decision
 
