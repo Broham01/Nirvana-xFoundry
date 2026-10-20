@@ -101,6 +101,7 @@ Nirvana shows the VPC as "1 not verified" because its planner doesn't know the `
 - **`ovs-ovn` in CrashLoopBackOff with `modprobe: Operation not permitted`:** the `openvswitch` module isn't loaded in xFoundry's VM; it is forgotten whenever the VM restarts. Run `up.sh` again: it loads the module and restarts the pod.
 - **`kubectl` doesn't see the cluster:** run `source platform/dev/env.sh` in that shell first. The cluster isn't in `~/.kube/config` on purpose.
 - **Nirvana or Docker Desktop seem affected:** they shouldn't be. Check that `env -u DOCKER_CONTEXT docker context show` prints `desktop-linux`. The scripts never change it.
+- **Pods stuck in `ContainerCreating` with `multus-shim ... failed to send CNI request: EOF`:** Multus's daemon ran out of memory. Its upstream manifest allows only 50Mi; `up.sh` raises it to 512Mi. On a cluster made before that fix, run `up.sh` again, and the stuck pods recover by themselves.
 - **VMs stuck in `Scheduling`:** xFoundry's VM is short on memory. Recreate it bigger: `down.sh` (say yes to deleting the VM), then `XFOUNDRY_VM_MEMORY=12 platform/dev/up.sh`.
 - **VMs slow to boot:** expected in emulation; CirrOS takes a minute or two.
 - **`DataVolume` stuck importing:** check `kubectl -n xf-dev-lab logs -l app=containerized-data-importer`; the image must have an arm64 variant (preflight checks the defaults).

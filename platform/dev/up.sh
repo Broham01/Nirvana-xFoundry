@@ -87,6 +87,9 @@ step "Multus $MULTUS_VERSION (extra interfaces)"
 curl -fsSL "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/$MULTUS_VERSION/deployments/multus-daemonset-thick.yml" \
   | sed "s#ghcr.io/k8snetworkplumbingwg/multus-cni:snapshot-thick#ghcr.io/k8snetworkplumbingwg/multus-cni:$MULTUS_VERSION-thick#g" \
   | k apply -f -
+# Multus's manifest limits its daemon to 50Mi / 100m. When KubeVirt starts a burst of pods the daemon is OOM-killed
+# mid-request ("failed to send CNI request: EOF") and every new pod stays in ContainerCreating. Give it room.
+k -n kube-system patch ds kube-multus-ds --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources","value":{"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"1","memory":"512Mi"}}}]' >/dev/null
 k -n kube-system rollout status ds/kube-multus-ds --timeout=10m
 
 step "KubeVirt $KUBEVIRT_VERSION (VMs)"
