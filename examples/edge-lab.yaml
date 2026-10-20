@@ -1,0 +1,45 @@
+# First milestone: one firewall, two subnets, a load balancer and two app servers.
+format: xfoundry.environment/1
+name: edge-lab
+description: OPNsense in front of an app subnet, HAProxy in the DMZ.
+owner: elfaz
+lifecycle:
+  ttl: 72h
+rules:
+  production: false
+  protect_appliances: true
+
+networks:
+  - name: wan
+    cidr: 10.60.0.0/24
+    gateway: 10.60.0.1        # upstream router
+  - name: dmz
+    cidr: 10.60.10.0/24
+    gateway: 10.60.10.1       # OPNsense DMZ interface
+  - name: app
+    cidr: 10.60.20.0/24
+    gateway: 10.60.20.1       # OPNsense LAN interface
+    exclude: [10.60.20.2..10.60.20.9]
+
+appliances:
+  - name: fw01
+    role: firewall
+    product: opnsense
+    interfaces:
+      - {network: wan, address: 10.60.0.2}
+      - {network: dmz, address: 10.60.10.1}
+      - {network: app, address: 10.60.20.1}
+    config: {source: netbox, ref: edge-lab-fw01}
+  - name: lb01
+    role: load-balancer
+    product: haproxy
+    interfaces:
+      - {network: dmz, address: 10.60.10.10}
+
+vms:
+  - pattern: APP-{nn}
+    count: 2
+    image: harbor.xfoundry.local/images/ubuntu-24.04:stable
+    size: {cpu: 2, memory: 4Gi, disk: 30Gi}
+    networks: [app]
+    tags: [Environment/Lab]

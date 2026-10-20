@@ -1,0 +1,22 @@
+[project]
+name = "nirvana-xfoundry"
+version = "0.1.0"
+description = "Nirvana xFoundry: build, scale and destroy Kubernetes environments; apply only Nirvana-approved plans."
+requires-python = ">=3.12"
+dependencies = ["PyYAML>=6.0", "jsonschema>=4.21"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+xfoundry = "xfoundry.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["xfoundry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

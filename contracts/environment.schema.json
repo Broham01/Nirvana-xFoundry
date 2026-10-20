@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirvana.local/contracts/xfoundry.environment/1",
+  "title": "xfoundry.environment/1",
+  "description": "One environment, described once. xFoundry builds it; Nirvana models and plans against it. Shared between both apps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "name", "networks"],
+  "properties": {
+    "format": {"const": "xfoundry.environment/1"},
+    "name": {"$ref": "#/$defs/dnsLabel", "description": "Environment name. The namespace is xf-<name>."},
+    "description": {"type": "string", "maxLength": 500},
+    "owner": {"type": "string", "maxLength": 128},
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ttl": {"type": "string", "pattern": "^[0-9]{1,4}[hd]$", "description": "Destroyed after this long unless renewed, e.g. 72h or 7d."},
+        "keep": {"type": "boolean", "default": false, "description": "Never reaped by TTL."}
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The same idea as a Nirvana model's rules: what reviews must treat carefully.",
+      "properties": {
+        "production": {"type": "boolean", "default": false, "description": "Labels the namespace environment=production, which Nirvana's Kubernetes planner treats as production."},
+        "protect_appliances": {"type": "boolean", "default": true, "description": "Firewalls, routers and load balancers get nirvana.io/protected=true."},
+        "keep_words": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 20}
+      }
+    },
+    "networks": {
+      "type": "array", "minItems": 1, "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "cidr"],
+        "properties": {
+          "name": {"$ref": "#/$defs/dnsLabel"},
+          "cidr": {"type": "string", "description": "IPv4 CIDR, e.g. 10.60.1.0/24."},
+          "gateway": {"type": "string", "description": "Defaults to the first usable address. Usually the firewall or router interface on this network."},
+          "vlan": {"type": "integer", "minimum": 1, "maximum": 4094, "description": "Underlay VLAN ID. Omit for an overlay-only network."},
+          "exclude": {"type": "array", "items": {"type": "string"}, "maxItems": 32, "description": "Addresses or ranges (a..b) the IPAM must not hand out."}
+        }
+      }
+    },
+    "appliances": {
+      "type": "array", "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "role", "product", "interfaces"],
+        "properties": {
+          "name": {"$ref": "#/$defs/dnsLabel"},
+          "role": {"enum": ["firewall", "router", "load-balancer"]},
+          "product": {"enum": ["opnsense", "pfsense", "vyos", "haproxy", "frr", "traefik", "nginx"]},
+          "image": {"type": "string", "description": "Disk image (registry ref). Defaults from the product catalogue."},
+          "size": {"$ref": "#/$defs/size"},
+          "interfaces": {
+            "type": "array", "minItems": 1, "maxItems": 8,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["network"],
+              "properties": {"network": {"$ref": "#/$defs/dnsLabel"}, "address": {"type": "string"}}
+            }
+          },
+          "config": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "source": {"enum": ["netbox", "git", "none"], "default": "netbox"},
+              "ref": {"type": "string", "maxLength": 512, "description": "NetBox device name or a git path."}
+            }
+          }
+        }
+      }
+    },
+    "vms": {
+      "type": "array", "maxItems": 64,
+      "description": "Groups of VMs, named by pattern exactly like Nirvana's model wizard (PRD-WEB{nn}).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pattern", "count", "image", "networks"],
+        "properties": {
+          "pattern": {"type": "string", "minLength": 1, "maxLength": 48},
+          "count": {"type": "integer", "minimum": 1, "maximum": 200},
+          "image": {"type": "string"},
+          "size": {"$ref": "#/$defs/size"},
+          "networks": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/dnsLabel"}},
+          "power": {"enum": ["all", "half", "none"], "default": "all"},
+          "tags": {"type": "array", "items": {"type": "string", "maxLength": 128}, "maxItems": 16}
+        }
+      }
+    },
+    "clusters": {
+      "type": "array", "maxItems": 8,
+      "description": "Nested Kubernetes clusters inside the environment.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "provider"],
+        "properties": {
+          "name": {"$ref": "#/$defs/dnsLabel"},
+          "provider": {"enum": ["vcluster", "capk"], "description": "vcluster: virtual cluster, fast and cheap. capk: Cluster API on KubeVirt VMs, full nodes (not built yet)."},
+          "version": {"type": "string", "pattern": "^v?1\\.[0-9]{2}(\\.[0-9]+)?$"},
+          "workers": {"type": "integer", "minimum": 0, "maximum": 50, "default": 2},
+          "network": {"$ref": "#/$defs/dnsLabel"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dnsLabel": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,38}[a-z0-9])?$"},
+    "size": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "cpu": {"type": "integer", "minimum": 1, "maximum": 64},
+        "memory": {"type": "string", "pattern": "^[0-9]+(Mi|Gi)$"},
+        "disk": {"type": "string", "pattern": "^[0-9]+(Gi|Ti)$"}
+      }
+    }
+  }
+}
