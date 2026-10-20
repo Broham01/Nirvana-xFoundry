@@ -7,9 +7,15 @@ Order of work. Each step ends with something that works end to end.
 - Shared spec `xfoundry.environment/1`, validator, renderer, Nirvana model projections, apply gate, CLI, tests.
 - Compatibility run against Nirvana's real Kubernetes planner.
 
-## 1. Nirvana service token (in the Nirvana repo)
+## 1. Nirvana service token and planner fixes: done, in review
 
-ADR 0002 item 1: bearer token with `snapshots:write`, `plans:write` and `plans:read`, which can never decide. Without it, `xfoundry plan` cannot reach Nirvana's API.
+[Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013):
+- service tokens that can never approve;
+- KubeVirt, Kube-OVN and Multus modelled;
+- cluster-scoped custom resources;
+- namespace annotations.
+
+The full loop ran live. Merge it, then update the Mac from inside the app.
 
 ## 2. Phase 0: platform cluster
 
@@ -20,7 +26,7 @@ Start with one node to prove it, then three.
 - Storage with CSI snapshots: Longhorn on one node, Rook-Ceph at three or more.
 - Kube-OVN + Multus, with an underlay ProviderNetwork for VLANs.
 - Argo CD (app-of-apps in `platform/`), Harbor, NetBox, OpenBao.
-- In-cluster collector: a CronJob running Nirvana's `collect-k8s-snapshot.py` with a read-only ServiceAccount, pushing to Nirvana with the service token.
+- In-cluster collector: a CronJob running Nirvana's `collect-k8s-snapshot.py` with the read-only identity in [`platform/collector-rbac.yaml`](../platform/collector-rbac.yaml) and the `--custom` list there, pushing to Nirvana with a service token.
 
 **Exit:** `xfoundry plan --snapshot` on the real, empty platform shows 0 gaps.
 
@@ -32,9 +38,9 @@ Start with one node to prove it, then three.
 4. The OPNsense VM boots, Ansible pushes its config from NetBox, and the app VMs reach the DMZ through it.
 5. Collect again: Nirvana shows the environment with no Modelled badge.
 
-## 4. Nirvana fixes found by the compatibility run
+## 4. Nirvana Kubernetes models from this spec
 
-These are ADR 0002 items 2–4: cluster-scoped custom resources, namespace annotations, and KubeVirt rules.
+ADR 0002 item 6: Nirvana ADR 0012 step 3 imports `xfoundry.environment/1`, so a Nirvana model can be built by xFoundry.
 
 ## 5. Image factory (the CI half)
 

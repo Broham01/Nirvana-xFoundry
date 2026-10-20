@@ -1,0 +1,70 @@
+# Read-only identity for the in-cluster snapshot collector (Nirvana's scripts/collect-k8s-snapshot.py).
+# It can list and get; it cannot change anything. Secrets are readable because the collector hashes
+# their values (16-hex SHA-256 prefixes) and never stores them; drop the secrets rule to skip them,
+# and Nirvana will treat Secrets as unknown.
+#
+# Run the collector with the custom resources xFoundry renders:
+#   collect-k8s-snapshot.py --name platform -o platform.snapshot.json \
+#     --custom virtualmachines.kubevirt.io --custom datavolumes.cdi.kubevirt.io \
+#     --custom subnets.kubeovn.io --custom vlans.kubeovn.io \
+#     --custom network-attachment-definitions.k8s.cni.cncf.io --custom applications.argoproj.io
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xfoundry-system
+  labels: {app.kubernetes.io/managed-by: xfoundry, nirvana.io/protected: "true"}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: snapshot-collector, namespace: xfoundry-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: xfoundry-snapshot-collector}
+rules:
+- apiGroups: [""]
+  resources: [namespaces, nodes, pods, services, configmaps, secrets, serviceaccounts, persistentvolumeclaims]
+  verbs: [get, list]
+- apiGroups: [apps]
+  resources: [deployments, statefulsets, daemonsets, replicasets]
+  verbs: [get, list]
+- apiGroups: [batch]
+  resources: [jobs, cronjobs]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses, networkpolicies]
+  verbs: [get, list]
+- apiGroups: [autoscaling]
+  resources: [horizontalpodautoscalers]
+  verbs: [get, list]
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [get, list]
+- apiGroups: [rbac.authorization.k8s.io]
+  resources: [roles, rolebindings]
+  verbs: [get, list]
+- apiGroups: [apiextensions.k8s.io]
+  resources: [customresourcedefinitions]
+  verbs: [get, list]
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachines]
+  verbs: [get, list]
+- apiGroups: [cdi.kubevirt.io]
+  resources: [datavolumes]
+  verbs: [get, list]
+- apiGroups: [kubeovn.io]
+  resources: [subnets, vlans]
+  verbs: [get, list]
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [argoproj.io]
+  resources: [applications]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: xfoundry-snapshot-collector}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: xfoundry-snapshot-collector}
+subjects:
+- {kind: ServiceAccount, name: snapshot-collector, namespace: xfoundry-system}

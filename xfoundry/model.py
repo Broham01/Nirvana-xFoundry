@@ -26,6 +26,13 @@ PLATFORM_CRDS = [
     'kubeovn.io/v1/Subnet', 'kubeovn.io/v1/Vlan', 'kubeovn.io/v1/ProviderNetwork',
     'k8s.cni.cncf.io/v1/NetworkAttachmentDefinition', 'argoproj.io/v1alpha1/Application',
 ]
+# Scope of each platform CRD, as Nirvana's collector records it (crd_scopes, Nirvana ADR 0013 follow-up).
+CRD_SCOPES = {'VirtualMachine': 'Namespaced', 'VirtualMachineInstance': 'Namespaced', 'VirtualMachinePool': 'Namespaced',
+              'DataVolume': 'Namespaced', 'VirtualMachineSnapshot': 'Namespaced', 'Subnet': 'Cluster', 'Vlan': 'Cluster',
+              'ProviderNetwork': 'Cluster', 'NetworkAttachmentDefinition': 'Namespaced', 'Application': 'Namespaced'}
+# Custom resources the in-cluster collector must be asked for (collect-k8s-snapshot.py --custom ...).
+COLLECT_CUSTOM = ['virtualmachines.kubevirt.io', 'datavolumes.cdi.kubevirt.io', 'subnets.kubeovn.io', 'vlans.kubeovn.io',
+                  'network-attachment-definitions.k8s.cni.cncf.io', 'applications.argoproj.io']
 PLATFORM_NAMESPACES = ['default', 'kube-system', 'kubevirt', 'cdi', 'kube-ovn', 'argocd', 'harbor', 'netbox', 'xfoundry-system']
 
 
@@ -43,7 +50,7 @@ def _base(spec: dict, label: str, at: datetime, nodes: list[dict] | None) -> dic
         'model': {'version': 1, 'format': spec['format'], 'spec': _public(spec), 'edited_at': at.isoformat().replace('+00:00', 'Z')},
         'kubernetes': {'version': 'v1.31.0', 'nodes': nodes or default_nodes(),
                        'namespaces': [{'id': f'-/Namespace/{n}', 'name': n, 'labels': {}} for n in PLATFORM_NAMESPACES],
-                       'objects': [], 'pods': [], 'crds': list(PLATFORM_CRDS)},
+                       'objects': [], 'pods': [], 'crds': list(PLATFORM_CRDS), 'crd_scopes': dict(CRD_SCOPES)},
     }
 
 
@@ -66,13 +73,13 @@ def built(spec: dict, at: datetime | None = None, nodes: list[dict] | None = Non
     for obj in render(spec):
         meta = obj['metadata']
         if obj['kind'] == 'Namespace':
-            k['namespaces'].append({'id': f"-/Namespace/{meta['name']}", 'name': meta['name'], 'labels': meta.get('labels', {})})
-            continue
-        if 'namespace' not in meta:   # cluster-scoped (Subnet, Vlan): the collector only keeps namespaced objects
+            k['namespaces'].append({'id': f"-/Namespace/{meta['name']}", 'name': meta['name'], 'labels': meta.get('labels', {}),
+                                    'annotations': meta.get('annotations', {})})
             continue
         applied = json.dumps(obj, sort_keys=True, separators=(',', ':'))
-        k['objects'].append({'id': f"{meta['namespace']}/{obj['kind']}/{meta['name']}", 'kind': obj['kind'], 'api_version': obj['apiVersion'],
-                             'namespace': meta['namespace'], 'name': meta['name'], 'labels': meta.get('labels', {}),
+        scope_ns = meta.get('namespace', '')   # '' for cluster-scoped custom resources (Subnet, Vlan)
+        k['objects'].append({'id': f"{scope_ns or '-'}/{obj['kind']}/{meta['name']}", 'kind': obj['kind'], 'api_version': obj['apiVersion'],
+                             'namespace': scope_ns, 'name': meta['name'], 'labels': meta.get('labels', {}),
                              'annotations': {**meta.get('annotations', {}), LAST_APPLIED: applied}, 'spec': obj.get('spec', {})})
         spot = node_names[len(k['pods']) % len(node_names)]
         if obj['kind'] == 'VirtualMachine' and obj['spec']['runStrategy'] == 'Always':

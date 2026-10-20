@@ -1,6 +1,6 @@
 # ADR 0002: Nirvana integration (plan, approve, then apply)
 
-Date: 2026-10-20 · Accepted in xFoundry; the Nirvana changes listed below are proposed to Nirvana.
+Date: 2026-10-20 · Accepted. Nirvana items 1–4 are built in [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013); 5 is polling for now; 6 is open.
 
 ## Decision
 
@@ -16,6 +16,8 @@ xFoundry changes a cluster only through this loop:
    - the snapshot id matches;
    - the fresh snapshot's fingerprint equals the recorded one (nodes, namespaces, objects, CRDs; pods left out because they churn);
    - the action matches.
+
+   - neither the plan's snapshot nor the fresh one is a model.
 
    Any failure means re-plan.
 6. Apply (`kubectl apply`, or `delete` for prune and destroy). A plan is used once.
@@ -35,7 +37,17 @@ A plan made against a model can be reviewed, but its fingerprint will never matc
 5. **Decision notification.** A webhook on decision, or keep polling `GET /plans/{id}` (enough for now).
 6. **Kubernetes models from `xfoundry.environment/1`.** ADR 0012 step 3 imports this spec, with the schema vendored from this repo, rather than inventing its own.
 
-## Verified (2026-10-20, Nirvana `af9b5fb`)
+## Verified live (2026-10-20, Nirvana PR #1)
+
+1. A token was created on Nirvana's Account page.
+2. `xfoundry plan` uploaded a snapshot and submitted edge-lab: "Creates 11 objects in 1 namespace. 2 are protected. Nothing unverified."
+3. The token's attempt to approve got 403.
+4. Alice approved in the browser.
+5. The gate refused drift, a model given as the fresh snapshot, and an edited spec, and passed the approved manifest.
+
+The live run also caught an xFoundry bug: idempotency keys were reused for a different request body, and Nirvana refused them. They are now derived from the whole request.
+
+## Before the fixes (Nirvana `af9b5fb`)
 
 Nirvana's `k8s_planner.plan` on the `edge-lab` example:
 

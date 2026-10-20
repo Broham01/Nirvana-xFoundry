@@ -15,6 +15,7 @@ for example after scaling a VM group down), destroy (delete the whole environmen
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -64,6 +65,10 @@ def manifest_for(spec: dict, action: str, ledger: dict) -> str:
     return to_yaml(gone)
 
 
+def _key(*parts) -> str:
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:48]
+
+
 def _snapshot(path: str) -> dict:
     data = json.loads(Path(path).read_text(encoding='utf-8'))
     if data.get('format') != model.SNAPSHOT_FORMAT or 'kubernetes' not in data:
@@ -99,10 +104,14 @@ def cmd_plan(a):
     snap = model.foundation(spec) if a.model else _snapshot(a.snapshot)
     client = Nirvana()
     digest = manifest_hash(manifest)
-    stored = client.upload_snapshot(snap, name=f"xfoundry {spec['name']} {datetime.now(timezone.utc):%Y-%m-%d %H:%M}", key=f'snap-{digest[:24]}-{gate.fingerprint(snap)[:24]}')
+    # Idempotency keys come from the whole request, so a retry replays and a new submission never collides (Nirvana
+    # refuses a reused key with a different body).
+    snap_name = f"xfoundry {spec['name']} {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
+    stored = client.upload_snapshot(snap, name=snap_name, key='snap-' + _key(snap_name, snap))
     delete = a.action != 'create'
     title = {'create': 'Create or update', 'prune': 'Prune removed objects from', 'destroy': 'Destroy'}[a.action] + f" environment {spec['name']}"
-    plan = client.create_plan(stored['id'], manifest, title, f"xfoundry-{spec['name']}-{a.action}.yaml", delete, key=f'plan-{a.action}-{digest[:40]}')
+    plan = client.create_plan(stored['id'], manifest, title, f"xfoundry-{spec['name']}-{a.action}.yaml", delete,
+                              key='plan-' + _key(a.action, stored['id'], digest))
     ledger['plans'][a.action] = {'plan_id': plan['id'], 'snapshot_id': stored['id'], 'manifest_hash': digest, 'fingerprint': gate.fingerprint(snap),
                                  'delete': delete, 'modelled': bool(a.model), 'submitted_at': datetime.now(timezone.utc).isoformat()}
     write_ledger(spec, ledger)
@@ -132,7 +141,10 @@ def cmd_apply(a):
     verb = ['delete', '--ignore-not-found', '--wait=false'] if rec['delete'] else ['apply']
     cmd = ['kubectl', *verb, '-f', '-'] + (['--dry-run=server'] if a.dry_run else [])
     print('Gate passed. Running:', ' '.join(cmd))
-    proc = subprocess.run(cmd, input=manifest, text=True)
+    try:
+        proc = subprocess.run(cmd, input=manifest, text=True)
+    except FileNotFoundError:
+        raise SystemExit('kubectl is not installed here. Nothing was changed.')
     if proc.returncode: raise SystemExit(proc.returncode)
     if not a.dry_run:
         if a.action == 'create': ledger['applied_manifest'] = manifest

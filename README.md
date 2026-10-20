@@ -23,11 +23,12 @@ Built:
 - the Nirvana client;
 - the apply gate and the CLI.
 
-21 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
+22 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
+
+The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
 
 Not built yet:
 - the platform cluster (phase 0);
-- the Nirvana service token (ADR 0002 item 1);
 - the operator;
 - the image factory;
 - Cluster API.
@@ -42,7 +43,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest -q
 ```
 
-With Nirvana running and a service token (`NIRVANA_URL`, `NIRVANA_TOKEN`):
+With Nirvana running, create a token in Nirvana under Account › Service tokens, then set `NIRVANA_URL=http://localhost:8000` and `NIRVANA_TOKEN`:
 
 ```sh
 xfoundry plan  examples/edge-lab.yaml --model                 # review only: a modelled plan can never pass the gate

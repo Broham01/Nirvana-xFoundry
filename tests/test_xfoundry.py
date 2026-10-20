@@ -87,7 +87,8 @@ def test_built_model_is_a_nirvana_kubernetes_model():
     k = snap['kubernetes']
     assert 'xf-edge-lab' in {n['name'] for n in k['namespaces']}
     assert {'VirtualMachine', 'Deployment', 'NetworkAttachmentDefinition'} <= {o['kind'] for o in k['objects']}
-    assert all(o['namespace'] for o in k['objects'])          # cluster-scoped Subnets are left out like the collector does
+    assert {o['id'] for o in k['objects'] if not o['namespace']} == {'-/Subnet/xf-edge-lab-wan', '-/Subnet/xf-edge-lab-dmz', '-/Subnet/xf-edge-lab-app'}
+    assert k['crd_scopes']['Subnet'] == 'Cluster'
     assert len(k['pods']) == 4                               # 3 running VMs + 1 haproxy pod
     assert 'kubevirt.io/v1/VirtualMachine' in k['crds']      # so Nirvana plans VMs instead of reporting a gap
 
@@ -107,10 +108,14 @@ def test_scale_down_finds_removed_vms():
 
 # ---- the gate
 
+def _collected(snap):
+    return {**snap, 'source': {**snap['source'], 'kind': 'kubernetes', 'collector': 'collect-k8s-snapshot.py'}}
+
+
 def _setup():
     spec = load(EXAMPLE)
     manifest = to_yaml(render(spec))
-    snap = model.built(spec)
+    snap = _collected(model.built(spec))
     record = {'plan_id': 'p1', 'snapshot_id': 's1', 'manifest_hash': manifest_hash(manifest), 'fingerprint': gate.fingerprint(snap), 'delete': False}
     plan = {'id': 'p1', 'state': 'approved', 'script': manifest, 'snapshot_id': 's1'}
     return manifest, snap, record, plan
@@ -146,3 +151,11 @@ def test_gate_refuses_drift_but_ignores_pod_churn():
 def test_gate_refuses_action_mismatch():
     manifest, snap, record, plan = _setup()
     assert not gate.check(plan, manifest, record, snap, delete=True).ok
+
+
+def test_gate_never_applies_a_modelled_plan():
+    manifest, snap, record, plan = _setup()
+    assert not gate.check(plan, manifest, {**record, 'modelled': True}, snap).ok
+    as_model = {**snap, 'source': {**snap['source'], 'kind': 'model'}}
+    r = gate.check(plan, manifest, {**record, 'fingerprint': gate.fingerprint(as_model)}, as_model)
+    assert not r.ok and any('model' in x for x in r.reasons)

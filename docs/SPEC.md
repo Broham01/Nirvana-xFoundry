@@ -39,7 +39,7 @@ Networks referenced must exist; addresses must sit inside their subnet and be un
 
 ## Compatibility, checked against Nirvana `af9b5fb`
 
-The rendered `edge-lab` manifest planned with Nirvana's real Kubernetes planner: create = 11 actions, 0 gaps; re-apply against the built model = no-ops for every namespaced object; firewall resize = an update on `fw01`; destroy = every object plus "deletes the namespace and everything in it". Three Nirvana fixes came out of it (cluster-scoped custom resources, namespace annotations, KubeVirt rules); see [ADR 0002](adr/0002-nirvana-integration.md).
+The rendered `edge-lab` manifest planned with Nirvana's real Kubernetes planner: create = 11 actions, 0 gaps; re-apply against the built model = no-ops for every namespaced object; firewall resize = an update on `fw01`; destroy = every object plus "deletes the namespace and everything in it". Three Nirvana fixes came out of it (cluster-scoped custom resources, namespace annotations, KubeVirt rules), now built in Nirvana PR #1. With them, a re-apply is a no-op on every object, VMs are fully modelled, and the create plan reads "Nothing unverified". See [ADR 0002](adr/0002-nirvana-integration.md).
 
 ## Versioning
 

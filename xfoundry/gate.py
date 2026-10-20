@@ -6,7 +6,9 @@ Checks, all required:
   2. SHA-256 of the plan's manifest == SHA-256 of what xFoundry is about to apply == what xFoundry submitted;
   3. the plan was made against the snapshot xFoundry recorded when it submitted;
   4. a fresh snapshot of the target has the same fingerprint (no drift since planning);
-  5. the plan's mode (apply or delete) matches the action.
+  5. the plan's mode (apply or delete) matches the action;
+  6. the plan was made against a collected snapshot, and the fresh snapshot is collected too: a model can be
+     reviewed but never applied (Nirvana ADR 0012 evidence rule).
 Any failure means re-plan, never "apply anyway".
 """
 from __future__ import annotations
@@ -51,6 +53,9 @@ def check(plan: dict, manifest: str, record: dict, fresh_snapshot: dict, delete:
         reasons.append('The plan was made against a different snapshot than xFoundry recorded.')
     if fingerprint(fresh_snapshot) != record.get('fingerprint'):
         reasons.append('The cluster changed since the plan was made (drift). Re-plan against a fresh snapshot.')
+    if record.get('modelled') or (fresh_snapshot.get('source') or {}).get('kind') == 'model':
+        reasons.append('A plan made against a model, or a model given as the fresh snapshot, is never applied. '
+                       'Collect the cluster and plan again.')
     if bool(record.get('delete')) != delete:
         reasons.append('The plan was for a different action (apply vs delete).')
     return GateResult(not reasons, reasons)
