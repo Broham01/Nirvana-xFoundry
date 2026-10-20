@@ -6,6 +6,18 @@ cd "$(dirname "$0")"; source versions.env
 CTX="kind-$KIND_CLUSTER"
 k() { kubectl --context "$CTX" "$@"; }
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+ovn_diagnostics() {
+  echo; echo "---- Kube-OVN diagnostics (paste this into the chat) ----"
+  k -n kube-system get pods -o wide | grep -E 'NAME|ovs|ovn' || true
+  echo "---- ovs-ovn pod events ----"
+  k -n kube-system describe pod -l app=ovs | sed -n '/^Events:/,$p' | tail -25 || true
+  echo "---- ovs-ovn logs ----"
+  k -n kube-system logs -l app=ovs --all-containers --tail=60 2>&1 || true
+  echo "---- previous ovs-ovn logs (if it restarted) ----"
+  k -n kube-system logs -l app=ovs --all-containers --previous --tail=30 2>&1 || true
+  echo "---- node: openvswitch module and memory ----"
+  docker exec "$(kind get nodes --name "$KIND_CLUSTER" | head -1)" sh -c 'grep -w openvswitch /proc/modules || echo "openvswitch not loaded"; free -m' || true
+}
 
 ./preflight.sh || { echo "Fix the failed checks above, then run again."; exit 1; }
 
@@ -31,8 +43,17 @@ step "Kube-OVN $KUBE_OVN_VERSION (CNI, Open vSwitch)"
 if k -n kube-system get deploy kube-ovn-controller >/dev/null 2>&1; then echo "installed"
 else
   curl -fsSL "https://raw.githubusercontent.com/kubeovn/kube-ovn/$KUBE_OVN_VERSION/dist/images/install.sh" -o /tmp/kube-ovn-install.sh
-  # install.sh talks to the current context, labels control-plane nodes kube-ovn/role=master and waits for itself.
-  VERSION="$KUBE_OVN_VERSION" bash /tmp/kube-ovn-install.sh
+  # install.sh talks to the current context, labels control-plane nodes kube-ovn/role=master and waits for itself,
+  # but gives Open vSwitch only 120 s. On a fresh node that can be too short: wait longer, then run it again to finish
+  # (it applies the same objects, so a second run is safe).
+  if ! VERSION="$KUBE_OVN_VERSION" bash /tmp/kube-ovn-install.sh; then
+    echo "Kube-OVN's installer stopped waiting; giving Open vSwitch up to 10 more minutes..."
+    if k -n kube-system rollout status ds/ovs-ovn --timeout=10m; then
+      VERSION="$KUBE_OVN_VERSION" bash /tmp/kube-ovn-install.sh || { ovn_diagnostics; exit 1; }
+    else
+      ovn_diagnostics; exit 1
+    fi
+  fi
 fi
 k -n kube-system rollout status deploy/kube-ovn-controller --timeout=10m
 
