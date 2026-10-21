@@ -9,7 +9,7 @@ Order of work. Each step ends with something that works end to end.
 
 ## 1. Nirvana service token and planner fixes: done, merged
 
-[Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013):
+[Nirvana PR #1](https://github.com/Broham01/Nirvana-xStage/pull/1) (Nirvana ADR 0013):
 - service tokens that can never approve;
 - KubeVirt, Kube-OVN and Multus modelled;
 - cluster-scoped custom resources;

@@ -31,7 +31,15 @@ The goal is a cloud platform (amd64 servers with KVM). Before paying for servers
 ## Consequences
 
 - `dev-lab` (FRR router, HAProxy, two CirrOS VMs) plans in Nirvana with every object modelled and 0 gaps. A re-apply against the built model "looks clean", and scaling down flags the lost disk.
-- **Not proven yet:** a real run on the Mac. This workspace cannot reach Docker Hub or Quay, so the scripts are linted and the manifests are planned, but no cluster was booted here.
+- **Proven on the Mac (2026-10-21):** the platform came up on Colima and dev-lab was planned with a service token and approved by a person in Nirvana. Router forwarding and return routes were fixed after that run and are still to be checked with `verify.sh`.
+- **Lessons from the first real runs** (each is now handled by the scripts):
+  - Docker Desktop's VM refuses `modprobe openvswitch`, so Kube-OVN can't run there: hence the separate Colima VM.
+  - `colima start` switches the global Docker context unless given `--activate=false`. That broke Nirvana's own update (its tests used whichever context was current); `start.sh` now passes `--activate=false` and puts back the previous context, and Nirvana's `scripts/docker.sh` pins `desktop-linux`.
+  - Kube-OVN's `install.sh` Step 6 copies a plugin into `/usr/local/bin` on the host, which fails on a Mac; `up.sh` runs the installer only up to Step 6.
+  - Multus thick ships with a 50Mi memory limit and was OOM-killed, which shows up as "failed to send CNI request: EOF" on every new pod; `up.sh` raises it to 512Mi and 1 CPU.
+  - KubeVirt takes several minutes in emulation (no `/dev/kvm` in the VM); `up.sh` shows progress instead of sitting silent.
+  - The collector failed on CRDs that are not installed (Argo `Application`); xFoundry now collects only installed custom resources.
+  - Router pods need `net.ipv4.ip_forward=1`, an unsafe sysctl the kubelet must allow (`allowedUnsafeSysctls`), and non-router appliances need return routes per interface.
 - **Isolation (added 2026-10-20):** each environment gets its own Kube-OVN `Vpc` (`xf-<name>`), and its subnets join it.
   - Environments are cut off from the cluster network and from each other.
   - Traffic between two of an environment's networks is rerouted (priority 31000) to the router or firewall that joins them.

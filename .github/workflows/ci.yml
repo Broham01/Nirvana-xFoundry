@@ -9,4 +9,5 @@ jobs:
         with: {python-version: '3.13'}
       - run: pip install -e '.[test]'
       - run: pytest -q
+      - run: shellcheck -S warning platform/dev/*.sh
       - run: xfoundry validate examples/edge-lab.yaml && xfoundry render examples/edge-lab.yaml > /dev/null

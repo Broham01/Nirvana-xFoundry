@@ -1,6 +1,6 @@
 # Nirvana xFoundry
 
-xFoundry builds, scales and destroys environments on Kubernetes: firewalls, routers, load balancers, VMs, networks and nested clusters. It changes nothing until a person has approved the exact change in [Nirvana](https://github.com/Broham01/Nirvana).
+xFoundry builds, scales and destroys environments on Kubernetes: firewalls, routers, load balancers, VMs, networks and nested clusters. It changes nothing until a person has approved the exact change in [Nirvana xStage](https://github.com/Broham01/Nirvana-xStage), the planner (called Nirvana until 2026-10-21; below, "Nirvana" means xStage).
 
 **Nirvana plans. xFoundry builds.** Nirvana never connects to infrastructure and never executes. xFoundry is the half that does, and it only applies a plan Nirvana approved, against a cluster that has not drifted since the plan was made.
 
@@ -14,7 +14,7 @@ spec (xfoundry.environment/1)
                               kubectl apply
 ```
 
-## Status (2026-10-20)
+## Status (2026-10-21)
 
 Built:
 - the shared spec and its validator;
@@ -23,11 +23,11 @@ Built:
 - the Nirvana client;
 - the apply gate and the CLI.
 
-36 tests pass. The rendered output was checked against Nirvana's real Kubernetes planner.
+45 tests pass; CI also runs shellcheck on the platform scripts. The rendered output was checked against Nirvana's real Kubernetes planner.
 
-The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
+The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana-xStage/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
 
-**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). `examples/dev-lab.yaml` is the environment to try first, and `xfoundry run` does the whole loop in one command.
+**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). It has run on the Mac: platform up, dev-lab planned and approved. What is left for v1 is using it: `verify.sh` (VMs boot and route through rt01), a re-plan showing no changes, then scale down and destroy. `examples/dev-lab.yaml` is the environment to try first, and `xfoundry run` does the whole loop in one command.
 
 Each environment gets its own Kube-OVN VPC: isolated from the cluster and other environments, with traffic between its networks routed through its router or firewall.
 
