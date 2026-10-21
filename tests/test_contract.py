@@ -57,3 +57,21 @@ def test_spec_format_is_ours():
 def test_name_pattern_vectors():
     for v in CONTRACT['name_pattern']['vectors']:
         assert spec.names(v['pattern'], v['count']) == v['names'], v
+
+
+def test_worker_reads_only_contract_job_fields_and_reports_contract_status():
+    from xfoundry import status, worker
+    console = CONTRACT['console']
+    used = set(re.findall(r"(?:job|current)(?:\.get\(|\[)'([a-z_]+)'", inspect.getsource(worker)))
+    assert used <= set(console['claimed_job_fields_read_by_xfoundry']), used - set(console['claimed_job_fields_read_by_xfoundry'])
+    src = inspect.getsource(status.observe)
+    for key in re.findall(r"'([a-z_]+)':", src):
+        if key in ('state', 'message', 'namespace', 'applied', 'manifest_hash', 'members', 'checked_at'):
+            assert key in console['status_fields']
+    member_keys = set(re.findall(r"\{'name': m\['name'\], (.*?)\}\)", src, re.S)[0] and re.findall(r"'([a-z_]+)': ", re.findall(r"members\.append\(\{(.*?)\}\)", src, re.S)[0]))
+    assert member_keys | {'name'} <= set(console['member_fields']), member_keys
+    states = set(re.findall(r"state, message = '([a-z]+)'", src)) | set(re.findall(r"'state': '([a-z]+)'", src))
+    assert states <= set(console['environment_states']), states
+    progress_states = set(re.findall(r"state='([a-z_]+)'", inspect.getsource(worker)))
+    allowed = set().union(*console['worker_may_set'].values())
+    assert progress_states <= allowed, progress_states - allowed

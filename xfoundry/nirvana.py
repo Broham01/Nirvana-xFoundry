@@ -1,9 +1,9 @@
 """Talk to Nirvana's plan API: push snapshots, submit plans, read decisions. Never approves anything.
 
-Endpoints used (Nirvana contracts/openapi.json): POST /api/v1/snapshots, POST /api/v1/plans, GET /api/v1/plans/{id}.
-Nirvana's API is currently session + CSRF (browser sign-in). xFoundry authenticates with a bearer service token,
-which Nirvana must add first (docs/adr/0002-nirvana-integration.md): it may submit snapshots and plans and read
-plans, and can never call /decision. Approval stays with a person in Nirvana.
+Endpoints used: only the service-token routes in docs/integration/contract.json. Snapshots and plans
+(POST /api/v1/snapshots, POST /api/v1/plans, GET /api/v1/plans/{id}), and for the worker (ADR 0004) claiming jobs a
+person queued, reading a job, reporting progress and reporting an environment's status. A token can never call
+/decision, queue or cancel a job: approval and every request for work stay with a person in Nirvana xStage.
 """
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ import uuid
 
 
 class NirvanaError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None, code: str | None = None):
+        super().__init__(message)
+        self.status, self.code = status, code
 
 
 class Nirvana:
@@ -38,7 +40,9 @@ class Nirvana:
                 return json.loads(resp.read() or b'{}')
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors='replace')[:500]
-            raise NirvanaError(f'Nirvana {method} {path} -> {exc.code}: {detail}') from exc
+            try: code = json.loads(detail).get('code')
+            except (ValueError, AttributeError): code = None
+            raise NirvanaError(f'Nirvana {method} {path} -> {exc.code}: {detail}', exc.code, code) from exc
         except urllib.error.URLError as exc:
             raise NirvanaError(f'Cannot reach Nirvana at {self.base}: {exc.reason}') from exc
 
@@ -52,3 +56,20 @@ class Nirvana:
 
     def get_plan(self, plan_id: str) -> dict:
         return self._call('GET', f'/api/v1/plans/{plan_id}')
+
+    # ---- the worker (ADR 0004): jobs a person queued in xStage
+
+    def claim(self, info: dict) -> dict | None:
+        """Check in; returns the job this worker holds or the oldest queued one, or None."""
+        return self._call('POST', '/api/v1/foundry/jobs/claim', {'info': info}).get('job')
+
+    def get_job(self, job_id: str) -> dict:
+        return self._call('GET', f'/api/v1/foundry/jobs/{job_id}')
+
+    def progress(self, job_id: str, message: str, level: str = 'info', state: str | None = None, plan_id: str | None = None,
+                 error: str | None = None) -> dict:
+        body = {'message': message[:2000], 'level': level, 'state': state, 'plan_id': plan_id, 'error': error[:2000] if error else None}
+        return self._call('POST', f'/api/v1/foundry/jobs/{job_id}/progress', body)
+
+    def report_status(self, environment_id: str, status: dict) -> dict:
+        return self._call('PUT', f'/api/v1/foundry/environments/{environment_id}/status', status)

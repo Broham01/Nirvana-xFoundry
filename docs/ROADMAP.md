@@ -25,6 +25,10 @@ Merged 2026-10-20 (`1403379`). Update the Mac from inside the app; the update ru
 
 Built: a Kube-OVN VPC per environment; traffic between subnets is rerouted through the router or firewall; `xfoundry run` does the whole loop in one command.
 
+## 2c. One console: done (2026-10-21)
+
+xStage's Environments and Activity pages, live updates, and `xfoundry worker` ([ADR 0004](adr/0004-worker.md), xStage ADR 0014, contract version 2). Next for the console: start and stop the dev platform from the browser (a small helper on the Mac, like xStage's updater), the exit test (`verify.sh`) as a job, and the worker as a LaunchAgent so it starts at login.
+
 ## 2b. Phase 0: cloud platform cluster
 
 amd64 servers with KVM. Start with one node to prove it, then three.
@@ -59,7 +63,7 @@ ADR 0002 item 6: Nirvana ADR 0012 step 3 imports `xfoundry.environment/1`, so a 
 
 ## 6. Operator
 
-A kopf operator watching `Environment` custom resources (the same spec) replaces the CLI loop:
+A kopf operator watching `Environment` custom resources (the same spec) replaces the worker on the Mac and runs in the cluster; xStage's console stays the same:
 - status conditions (Planned, Approved, Applied, Drifted);
 - a TTL reaper;
 - quotas per owner;

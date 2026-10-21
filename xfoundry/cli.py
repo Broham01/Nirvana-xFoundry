@@ -11,6 +11,7 @@
   xfoundry collect [-o FILE]                 snapshot the cluster with Nirvana's collector (NIRVANA_DIR)
   xfoundry run SPEC [--action A]             all of it: collect, plan, wait for approval in Nirvana,
                                              collect again, gate, apply
+  xfoundry worker [--once]                   carry out jobs queued in Nirvana xStage's console (ADR 0004)
 
 Actions: create (default; create or change to match the spec), prune (delete objects the spec no longer has,
 for example after scaling a VM group down), destroy (delete the whole environment).
@@ -102,24 +103,30 @@ def cmd_model(a):
     print(f"Wrote {a.output}: model '{snap['source']['server']}', {len(k['objects'])} objects, {len(k['pods'])} pods.")
 
 
-def cmd_plan(a):
-    spec = load(a.spec)
+def submit_plan(spec: dict, action: str, snap: dict, modelled: bool = False, client: Nirvana | None = None) -> tuple[dict, dict]:
+    """Upload the snapshot, submit the manifest for `action` as a plan, and record what was submitted in the ledger."""
     ledger = read_ledger(spec)
-    manifest = manifest_for(spec, a.action, ledger)
-    snap = model.foundation(spec) if a.model else _snapshot(a.snapshot)
-    client = Nirvana()
+    manifest = manifest_for(spec, action, ledger)
+    client = client or Nirvana()
     digest = manifest_hash(manifest)
     # Idempotency keys come from the whole request, so a retry replays and a new submission never collides (Nirvana
     # refuses a reused key with a different body).
     snap_name = f"xfoundry {spec['name']} {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
     stored = client.upload_snapshot(snap, name=snap_name, key='snap-' + _key(snap_name, snap))
-    delete = a.action != 'create'
-    title = {'create': 'Create or update', 'prune': 'Prune removed objects from', 'destroy': 'Destroy'}[a.action] + f" environment {spec['name']}"
-    plan = client.create_plan(stored['id'], manifest, title, f"xfoundry-{spec['name']}-{a.action}.yaml", delete,
-                              key='plan-' + _key(a.action, stored['id'], digest))
-    ledger['plans'][a.action] = {'plan_id': plan['id'], 'snapshot_id': stored['id'], 'manifest_hash': digest, 'fingerprint': gate.fingerprint(snap),
-                                 'delete': delete, 'modelled': bool(a.model), 'submitted_at': datetime.now(timezone.utc).isoformat()}
+    delete = action != 'create'
+    title = {'create': 'Create or update', 'prune': 'Prune removed objects from', 'destroy': 'Destroy'}[action] + f" environment {spec['name']}"
+    plan = client.create_plan(stored['id'], manifest, title, f"xfoundry-{spec['name']}-{action}.yaml", delete,
+                              key='plan-' + _key(action, stored['id'], digest))
+    ledger['plans'][action] = {'plan_id': plan['id'], 'snapshot_id': stored['id'], 'manifest_hash': digest, 'fingerprint': gate.fingerprint(snap),
+                               'delete': delete, 'modelled': bool(modelled), 'submitted_at': datetime.now(timezone.utc).isoformat()}
     write_ledger(spec, ledger)
+    return plan, ledger['plans'][action]
+
+
+def cmd_plan(a):
+    spec = load(a.spec)
+    snap = model.foundation(spec) if a.model else _snapshot(a.snapshot)
+    plan, _ = submit_plan(spec, a.action, snap, modelled=a.model)
     print(f"Submitted plan {plan['id']} ({plan.get('status', '')}, {plan.get('highs', 0)} high findings). Review and approve it in Nirvana.")
     if a.model: print('Planned against a model: Nirvana marks this Modelled. The apply gate will require a fresh collected snapshot that matches.')
 
@@ -133,31 +140,49 @@ def cmd_status(a):
           + (f" · note: {plan['decision_note']}" if plan.get('decision_note') else ''))
 
 
-def cmd_apply(a):
-    spec = load(a.spec)
+class Refused(Exception):
+    """The gate said no. Nothing was changed."""
+    def __init__(self, reasons: list[str]):
+        self.reasons = reasons
+        super().__init__('; '.join(reasons))
+
+
+def apply_plan(spec: dict, action: str, fresh: dict, context: str | None = None, dry_run: bool = False,
+               client: Nirvana | None = None) -> tuple[list[str], str]:
+    """Run the gate against a fresh snapshot, then kubectl apply (or delete). Returns the command and its output.
+    Raises Refused when the gate refuses, and SystemExit when there is no plan or kubectl fails."""
     ledger = read_ledger(spec)
-    rec = ledger['plans'].get(a.action)
-    if not rec: raise SystemExit(f'No {a.action} plan submitted for {spec["name"]}. Run xfoundry plan first.')
-    manifest = manifest_for(spec, a.action, ledger)
-    result = gate.check(Nirvana().get_plan(rec['plan_id']), manifest, rec, _snapshot(a.snapshot), delete=rec['delete'])
-    if not result.ok:
-        print('Refused. Nothing was changed:', *[f'  - {r}' for r in result.reasons], sep='\n')
-        raise SystemExit(2)
+    rec = ledger['plans'].get(action)
+    if not rec: raise SystemExit(f'No {action} plan submitted for {spec["name"]}. Run xfoundry plan first.')
+    manifest = manifest_for(spec, action, ledger)
+    result = gate.check((client or Nirvana()).get_plan(rec['plan_id']), manifest, rec, fresh, delete=rec['delete'])
+    if not result.ok: raise Refused(result.reasons)
     verb = ['delete', '--ignore-not-found', '--wait=false'] if rec['delete'] else ['apply']
-    context = _context(a)
-    cmd = ['kubectl', *(['--context', context] if context else []), *verb, '-f', '-'] + (['--dry-run=server'] if a.dry_run else [])
-    print('Gate passed. Running:', ' '.join(cmd))
+    cmd = ['kubectl', *(['--context', context] if context else []), *verb, '-f', '-'] + (['--dry-run=server'] if dry_run else [])
     try:
-        proc = subprocess.run(cmd, input=manifest, text=True)
+        proc = subprocess.run(cmd, input=manifest, text=True, capture_output=True)
     except FileNotFoundError:
         raise SystemExit('kubectl is not installed here. Nothing was changed.')
-    if proc.returncode: raise SystemExit(proc.returncode)
-    if not a.dry_run:
-        if a.action == 'create': ledger['applied_manifest'] = manifest
-        elif a.action == 'destroy': ledger['applied_manifest'] = None
+    output = (proc.stdout + proc.stderr).strip()
+    if proc.returncode: raise SystemExit(f'kubectl failed (exit {proc.returncode}): {output[-1500:]}')
+    if not dry_run:
+        if action == 'create': ledger['applied_manifest'] = manifest
+        elif action == 'destroy': ledger['applied_manifest'] = None
         else: ledger['applied_manifest'] = to_yaml(render(spec))
-        ledger['plans'].pop(a.action)   # a plan is used once
+        ledger['plans'].pop(action)   # a plan is used once
         write_ledger(spec, ledger)
+    return cmd, output
+
+
+def cmd_apply(a):
+    spec = load(a.spec)
+    try:
+        cmd, output = apply_plan(spec, a.action, _snapshot(a.snapshot), _context(a), a.dry_run)
+    except Refused as exc:
+        print('Refused. Nothing was changed:', *[f'  - {r}' for r in exc.reasons], sep='\n')
+        raise SystemExit(2)
+    print('Gate passed. Ran:', ' '.join(cmd))
+    if output: print(output)
 
 
 def _context(a) -> str | None:
@@ -215,6 +240,12 @@ def cmd_run(a):
     cmd_apply(argparse.Namespace(spec=a.spec, action=a.action, snapshot=fresh, context=_context(a), dry_run=a.dry_run))
 
 
+def cmd_worker(a):
+    from .worker import main as worker_main
+    LEDGER_DIR.mkdir(exist_ok=True)
+    worker_main(_context(a), a.collector, a.once)
+
+
 def main(argv: list[str] | None = None):
     p = argparse.ArgumentParser(prog='xfoundry', description='Nirvana xFoundry: build, scale and destroy environments, gated by Nirvana plans.')
     sub = p.add_subparsers(dest='cmd', required=True)
@@ -238,6 +269,9 @@ def main(argv: list[str] | None = None):
     s.add_argument('--wait', type=int, default=30, help='minutes to wait for a decision (default 30)')
     s.add_argument('--poll', type=int, default=5, help='seconds between checks (default 5)')
     s.add_argument('--dry-run', action='store_true'); s.set_defaults(fn=cmd_run)
+    s = sub.add_parser('worker', help="carry out jobs queued in Nirvana xStage's console")
+    s.add_argument('--context'); s.add_argument('--collector'); s.add_argument('--once', action='store_true', help='one job at most, then exit')
+    s.set_defaults(fn=cmd_worker)
     a = p.parse_args(argv)
     try:
         a.fn(a)
