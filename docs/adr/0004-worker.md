@@ -17,7 +17,7 @@ Every rule of ADR 0002 holds: nothing is applied without the gate, the worker ne
 
 **Restarts.** A claimed job comes back to the same token until it finishes. A worker stopped while a plan waits resumes waiting for the same plan; one stopped mid-apply runs the gate again (kubectl apply and delete are idempotent), or reports success if the ledger shows the apply finished.
 
-**On the Mac.** `Set xFoundry token.command` stores the worker's token in the Keychain (`nirvana-xfoundry-token`); `Start xFoundry worker.command` runs `platform/dev/worker.sh`, which loads the dev platform's settings and starts the worker in that window.
+**On the Mac.** `Set xFoundry token.command` stores the worker's token in the Keychain (`nirvana-xfoundry-token`). xStage's supervisor runs `platform/dev/worker.sh` (xStage ADR 0015); `Start xFoundry worker.command` runs it in a Terminal window when xStage is not supervising it. `worker.sh` refuses to start, with a one-line reason the console shows, when there is no token, xStage does not answer, or the dev cluster is not running.
 
 ## Consequences
 
