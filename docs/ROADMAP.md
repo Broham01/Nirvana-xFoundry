@@ -27,7 +27,7 @@ Built: a Kube-OVN VPC per environment; traffic between subnets is rerouted throu
 
 ## 2c. One console: done (2026-10-21)
 
-xStage's Environments and Activity pages, live updates, and `xfoundry worker` ([ADR 0004](adr/0004-worker.md), xStage ADR 0014, contract version 2). Next for the console: start and stop the dev platform from the browser (a small helper on the Mac, like xStage's updater), the exit test (`verify.sh`) as a job, and the worker as a LaunchAgent so it starts at login.
+xStage's Environments and Activity pages, live updates, and `xfoundry worker` ([ADR 0004](adr/0004-worker.md), xStage ADR 0014, contract version 2). Since then: xStage runs the worker and updates this folder (xStage ADR 0015), starts at login, and starts and stops the dev platform from the browser (xStage ADR 0016). Next for the console: the exit test (`verify.sh`) as a job.
 
 ## 2b. Phase 0: cloud platform cluster
 
