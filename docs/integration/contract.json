@@ -2,7 +2,7 @@
   "contract": "nirvana-xfoundry",
   "version": 1,
   "updated": "2026-10-21",
-  "note": "Mirrored byte for byte in Broham01/Nirvana and Broham01/nirvana-xfoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
+  "note": "Mirrored byte for byte in Broham01/Nirvana-xStage and Broham01/Nirvana-xFoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
   "nirvana_api": {
     "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write"]},
     "token_routes": [

@@ -2,9 +2,9 @@
 
 xFoundry builds, scales and destroys environments on Kubernetes (KubeVirt VMs, Kube-OVN networks, Multus, vclusters). It **holds cluster credentials and executes**, but it changes a cluster only through an approved Nirvana plan. Overview and status: [README.md](README.md). Spec: [docs/SPEC.md](docs/SPEC.md). Order of work: [docs/ROADMAP.md](docs/ROADMAP.md). Decisions: `docs/adr/`.
 
-## Sibling project: Nirvana
+## Sibling project: Nirvana xStage
 
-[Broham01/Nirvana](https://github.com/Broham01/Nirvana) (private) plans changes and is where a person approves them. It is developed in separate Claude chats, with its state in the claude.ai "Nirvana" Project.
+[Broham01/Nirvana-xStage](https://github.com/Broham01/Nirvana-xStage) (private) plans changes and is where a person approves them. It is developed in separate Claude chats, with its state in the claude.ai "Nirvana xStage" Project. It was called Nirvana until 2026-10-21; "Nirvana" is now the family name, and in this repo (code, settings `NIRVANA_*`, `xfoundry/nirvana.py`) "Nirvana" still means xStage.
 
 **Before changing anything on the boundary, read [docs/integration/CONTRACT.md](docs/integration/CONTRACT.md) and the newest lines of [docs/integration/CHANGES.md](docs/integration/CHANGES.md).** The boundary is:
 - `xfoundry/nirvana.py`: only the token routes in the contract, and only the plan and snapshot fields it lists;

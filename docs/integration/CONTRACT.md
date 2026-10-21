@@ -1,10 +1,12 @@
-# Nirvana ↔ xFoundry integration contract
+# Nirvana xStage ↔ Nirvana xFoundry integration contract
 
-Mirrored byte for byte in [Broham01/Nirvana](https://github.com/Broham01/Nirvana) and [Broham01/nirvana-xfoundry](https://github.com/Broham01/nirvana-xfoundry) at `docs/integration/`. The machine-readable copy is [`contract.json`](contract.json); both repos test themselves against it.
+In this contract "Nirvana" means Nirvana xStage, the planner (renamed 2026-10-21). Format names such as `nirvana.snapshot/1`, `nirvana.plan/1` and the label `nirvana.io/protected` keep the family name and do not change.
+
+Mirrored byte for byte in [Broham01/Nirvana-xStage](https://github.com/Broham01/Nirvana-xStage) and [Broham01/Nirvana-xFoundry](https://github.com/Broham01/Nirvana-xFoundry) at `docs/integration/`. The machine-readable copy is [`contract.json`](contract.json); both repos test themselves against it.
 
 **Nirvana plans. xFoundry builds.** Nirvana never connects to infrastructure and never executes. xFoundry applies only a plan a person approved in Nirvana, against a cluster that has not drifted since.
 
-Decisions behind this: Nirvana [ADR 0012](https://github.com/Broham01/Nirvana/blob/main/docs/adr/0012-modelled-environments.md) (models) and [ADR 0013](https://github.com/Broham01/Nirvana/blob/main/docs/adr/0013-service-tokens-and-xfoundry.md) (service tokens); xFoundry [ADR 0002](https://github.com/Broham01/nirvana-xfoundry/blob/main/docs/adr/0002-nirvana-integration.md) (plan → approve → gate → apply).
+Decisions behind this: Nirvana [ADR 0012](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0012-modelled-environments.md) (models) and [ADR 0013](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0013-service-tokens-and-xfoundry.md) (service tokens); xFoundry [ADR 0002](https://github.com/Broham01/Nirvana-xFoundry/blob/main/docs/adr/0002-nirvana-integration.md) (plan → approve → gate → apply).
 
 ## Who owns what
 
