@@ -56,13 +56,13 @@ Once the platform is up, everything below can be done from Nirvana xStage's **En
 
 1. In xStage: **Account › Service tokens › Create**. Copy the token (it is shown once).
 2. Double-click **Set xFoundry token.command** (in the xFoundry folder) and paste it there. It goes into your Keychain, not a file. Once only.
-3. Double-click **Start xFoundry worker.command**. Leave the window open; it shows what the worker does. The Environments page shows "Worker … online".
+3. Nothing else: xStage runs the worker itself when this folder is `~/Nirvana-xFoundry` (xStage ADR 0015), restarts it if it stops, and updates this folder when you update xStage. The Environments page shows "Worker … online", or why it is not (no token yet, platform stopped). Its output is in xStage's `.local-data/xfoundry-worker.log`. Without xStage's supervisor, **Start xFoundry worker.command** runs it in a Terminal window instead.
 4. In xStage: **Environments › New environment**. Paste `examples/dev-lab.yaml` (or edit the template), then **Save and plan it**.
 5. The job appears and, a few seconds later, says **Waiting for your approval**. **Review the plan**, check any high findings and approve. The worker applies it through the gate and shows what is running.
 
 Scaling: edit `count` in the spec, **Save spec**, **Apply spec changes** (adds VMs); after lowering a count, **Remove scaled-down objects** (deletes the extra VMs). **Destroy** removes everything, again only after you approve its plan. **Check** validates the spec and refreshes the status without planning anything.
 
-Closing the worker window stops it; a job waiting for approval carries on when you start it again. The CLI below still works, and both use the same ledger.
+When the worker stops (xStage restarts or updates), a job waiting for approval carries on when it starts again. The CLI below still works, and both use the same ledger.
 
 ## 4. The loop from a terminal
 

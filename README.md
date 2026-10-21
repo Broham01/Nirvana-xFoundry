@@ -16,7 +16,7 @@ spec (xfoundry.environment/1)
 
 ## Status (2026-10-21)
 
-**New: one console.** Environments are built, scaled and destroyed from Nirvana xStage's Environments page. `xfoundry worker` (start it with `Start xFoundry worker.command`) claims the jobs you queue there, plans them, waits for your approval in xStage, and applies through the gate ([ADR 0004](docs/adr/0004-worker.md)).
+**New: one console.** Environments are built, scaled and destroyed from Nirvana xStage's Environments page. `xfoundry worker` (xStage starts it for you; xStage ADR 0015) claims the jobs you queue there, plans them, waits for your approval in xStage, and applies through the gate ([ADR 0004](docs/adr/0004-worker.md)).
 
 Built:
 - the shared spec and its validator;
