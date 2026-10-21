@@ -6,7 +6,7 @@ Mirrored byte for byte in [Broham01/Nirvana-xStage](https://github.com/Broham01/
 
 **Nirvana plans. xFoundry builds.** Nirvana never connects to infrastructure and never executes. xFoundry applies only a plan a person approved in Nirvana, against a cluster that has not drifted since.
 
-Decisions behind this: Nirvana [ADR 0012](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0012-modelled-environments.md) (models) and [ADR 0013](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0013-service-tokens-and-xfoundry.md) (service tokens); xFoundry [ADR 0002](https://github.com/Broham01/Nirvana-xFoundry/blob/main/docs/adr/0002-nirvana-integration.md) (plan → approve → gate → apply).
+Decisions behind this: Nirvana [ADR 0012](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0012-modelled-environments.md) (models) and [ADR 0013](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0013-service-tokens-and-xfoundry.md) (service tokens); xFoundry [ADR 0002](https://github.com/Broham01/Nirvana-xFoundry/blob/main/docs/adr/0002-nirvana-integration.md) (plan → approve → gate → apply). The console (contract version 2): xStage [ADR 0014](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/adr/0014-console-and-live-updates.md) and xFoundry [ADR 0004](https://github.com/Broham01/Nirvana-xFoundry/blob/main/docs/adr/0004-worker.md).
 
 ## Who owns what
 
@@ -17,6 +17,8 @@ Decisions behind this: Nirvana [ADR 0012](https://github.com/Broham01/Nirvana-xS
 | Planning, findings, approval | Nirvana | read the result; never approve |
 | `xfoundry.environment/1` and its schema | xFoundry | import it (ADR 0012 step 3), vendoring the schema |
 | Rendering, the gate, `kubectl apply` | xFoundry | nothing: Nirvana never executes |
+| Environments and jobs in the console, who may queue or cancel | Nirvana | claim jobs, report progress and status; never queue, cancel or edit |
+| The worker and what it reports | xFoundry | show the reports; never treat them as change evidence |
 
 ## The API xFoundry uses
 
@@ -29,10 +31,25 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 | GET | `/api/v1/plans` | `plans:read` |
 | GET | `/api/v1/plans/{id}` | `plans:read` |
 | POST | `/api/v1/plans` | `plans:write` |
+| POST | `/api/v1/foundry/jobs/claim` | `jobs:write` |
+| GET | `/api/v1/foundry/jobs/{id}` | `jobs:read` |
+| POST | `/api/v1/foundry/jobs/{id}/progress` | `jobs:write` |
+| PUT | `/api/v1/foundry/environments/{id}/status` | `environments:status` |
 
 - Plan states: `review`, `approved`, `changes_requested`. xFoundry reads `id`, `state`, `status`, `highs`, `snapshot_id`, `script` and `decision_note`.
 - A plan for prune or destroy is submitted with `parameters: {"Mode": "delete"}`.
 - Every POST carries an `Idempotency-Key`. The same key with a different body is refused, so xFoundry derives keys from the whole request.
+
+### Jobs (the console, version 2)
+
+A person queues a job in xStage (`create`, `prune`, `destroy` or `check`). The worker claims it, plans it, waits for a person to approve the plan, then applies it through the gate.
+
+- **Claim** returns the job this token already holds and has not finished, else the oldest queued one, else `null`. Each claim is also the worker's check-in (`info`: version, platform, cluster), shown in the console.
+- **Job states:** `queued`, `running`, `waiting_approval`, `applying`, `succeeded`, `failed`, `cancelled`. The worker may move a job only as `worker_may_set` in `contract.json` allows. It never moves a job back to `queued`, and a final state is final.
+- **Cancel** is a person's action. A queued job is cancelled at once; a claimed one gets `cancel_requested`, and xStage refuses the move to `applying` from then on. The worker stops before applying, never halfway.
+- **Progress** carries `message`, `level`, and optionally `state`, `plan_id` (a plan this owner has) and `error`.
+- **Status** (`state`, `message`, `namespace`, `applied`, `manifest_hash`, `members`, `checked_at`) is what the worker saw. It is shown to the person and never used as change evidence: only the gate's fresh snapshot is.
+- xStage reads only the spec's `format` and `name`; xFoundry validates the whole spec (a `check` job does only that and reports status).
 
 ## Rules neither side may break
 
@@ -40,7 +57,8 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 2. **Models are never applied.** A snapshot with `source.kind: "model"` can be planned and reviewed. Nirvana marks such plans Modelled, and xFoundry's gate refuses them.
 3. **Nirvana never executes.** Manifests are parsed as data; scripts run only in the sandbox against fakes.
 4. **The gate's fingerprint fields stay stable.** xFoundry fingerprints nodes (`name`, `ready`, `unschedulable`), namespaces (`name`, `labels`), objects (`id`, `spec`, `labels`) and `crds`. Nirvana may add fields to snapshots but must not rename or drop these without a contract change.
-5. **Names follow one rule.** `PRD-WEB{nn}` × 3 gives `PRD-WEB01..03`; a pattern without a placeholder gives `name`, `name-2`, `name-3`. The test vectors are in `contract.json`.
+5. **A job never applies by itself.** Every create, prune and destroy job becomes a plan a person approves; then the gate decides. Tokens cannot queue, cancel, edit environments or open the live event stream.
+6. **Names follow one rule.** `PRD-WEB{nn}` × 3 gives `PRD-WEB01..03`; a pattern without a placeholder gives `name`, `name-2`, `name-3`. The test vectors are in `contract.json`.
 
 ## Changing the contract
 
@@ -52,4 +70,4 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 ## Open items
 
 - **`power: half` differs.** Nirvana's vSphere model generator powers on every other VM; xFoundry powers on the first half, rounded up. Agree one rule before Nirvana imports `xfoundry.environment/1`.
-- **Decisions are polled.** xFoundry polls `GET /api/v1/plans/{id}`; there is no webhook yet.
+- **Decisions are polled.** The worker polls `GET /api/v1/plans/{id}` every few seconds; there is no webhook or token event stream yet. Browsers get live updates (`/api/v1/events`), tokens do not.

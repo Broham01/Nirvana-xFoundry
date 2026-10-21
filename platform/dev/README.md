@@ -50,7 +50,21 @@ platform/dev/down.sh           # delete the cluster (and optionally the VM); ask
 5. applies the collector's read-only identity;
 6. writes `platform/dev/env.sh` for your shell.
 
-## 3. The loop
+## 3. From the browser (the console)
+
+Once the platform is up, everything below can be done from Nirvana xStage's **Environments** page instead of a terminal ([ADR 0004](../../docs/adr/0004-worker.md)).
+
+1. In xStage: **Account › Service tokens › Create**. Copy the token (it is shown once).
+2. Double-click **Set xFoundry token.command** (in the xFoundry folder) and paste it there. It goes into your Keychain, not a file. Once only.
+3. Double-click **Start xFoundry worker.command**. Leave the window open; it shows what the worker does. The Environments page shows "Worker … online".
+4. In xStage: **Environments › New environment**. Paste `examples/dev-lab.yaml` (or edit the template), then **Save and plan it**.
+5. The job appears and, a few seconds later, says **Waiting for your approval**. **Review the plan**, check any high findings and approve. The worker applies it through the gate and shows what is running.
+
+Scaling: edit `count` in the spec, **Save spec**, **Apply spec changes** (adds VMs); after lowering a count, **Remove scaled-down objects** (deletes the extra VMs). **Destroy** removes everything, again only after you approve its plan. **Check** validates the spec and refreshes the status without planning anything.
+
+Closing the worker window stops it; a job waiting for approval carries on when you start it again. The CLI below still works, and both use the same ledger.
+
+## 4. The loop from a terminal
 
 Nirvana runs as usual (`http://localhost:3000`). Create a token under Account › Service tokens.
 
@@ -86,7 +100,7 @@ Day 2:
 - **Scale down:** set `count: 1`, then `xfoundry run examples/dev-lab.yaml --action prune` (Nirvana flags the disk that will be lost).
 - **Remove everything:** `xfoundry run examples/dev-lab.yaml --action destroy`.
 
-## 4. Check that it works (the exit test)
+## 5. Check that it works (the exit test)
 
 ```sh
 platform/dev/verify.sh             # appliances ready, VMs Running, a routed ping from the load balancer to each VM
@@ -109,7 +123,7 @@ Other things worth a look:
 - The VPC reroutes traffic between the subnets through `rt01`: `kubectl get vpc xf-dev-lab -o yaml`.
 - HAProxy stats: `kubectl -n xf-dev-lab port-forward deploy/lb01 8404`, then open `http://localhost:8404/stats`.
 
-## 5. Day 2: scale down, then tear down
+## 6. Day 2: scale down, then tear down
 
 Each change goes through Nirvana like the first one.
 

@@ -9,3 +9,10 @@ __pycache__/
 platform/dev/env.sh
 platform/dev/.kubeconfig
 platform/dev/*.snapshot.json
+platform/dev/.arch
+# written by Kube-OVN's install.sh when up.sh runs it from this folder
+platform/dev/kube-ovn*.yaml
+platform/dev/ovn*.yaml
+platform/dev/ovs-ovn*.yaml
+# the old one-off teardown script
+Teardown dev-lab.command

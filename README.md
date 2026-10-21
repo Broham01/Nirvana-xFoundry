@@ -16,6 +16,8 @@ spec (xfoundry.environment/1)
 
 ## Status (2026-10-21)
 
+**New: one console.** Environments are built, scaled and destroyed from Nirvana xStage's Environments page. `xfoundry worker` (start it with `Start xFoundry worker.command`) claims the jobs you queue there, plans them, waits for your approval in xStage, and applies through the gate ([ADR 0004](docs/adr/0004-worker.md)).
+
 Built:
 - the shared spec and its validator;
 - the renderer (Kube-OVN, Multus, KubeVirt, Deployments, vcluster);
@@ -23,7 +25,7 @@ Built:
 - the Nirvana client;
 - the apply gate and the CLI.
 
-45 tests pass; CI also runs shellcheck on the platform scripts. The rendered output was checked against Nirvana's real Kubernetes planner.
+55 tests pass; CI also runs shellcheck on the platform scripts. The rendered output was checked against Nirvana's real Kubernetes planner.
 
 The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana-xStage/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
 
@@ -66,3 +68,4 @@ Scale a VM group down by editing `count`, then `plan --action prune` / `apply --
 - [ADR 0001](docs/adr/0001-foundation.md): platform and tool choices.
 - [ADR 0002](docs/adr/0002-nirvana-integration.md): the plan → approve → gate → apply loop, and the Nirvana changes it needs.
 - [ADR 0003](docs/adr/0003-local-dev-platform.md): local dev platform first; architectures; routers and gateways on Kube-OVN.
+- [ADR 0004](docs/adr/0004-worker.md): the worker: xStage's console drives xFoundry; a job never applies without an approved plan and the gate.

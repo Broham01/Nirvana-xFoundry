@@ -8,6 +8,7 @@ xFoundry builds, scales and destroys environments on Kubernetes (KubeVirt VMs, K
 
 **Before changing anything on the boundary, read [docs/integration/CONTRACT.md](docs/integration/CONTRACT.md) and the newest lines of [docs/integration/CHANGES.md](docs/integration/CHANGES.md).** The boundary is:
 - `xfoundry/nirvana.py`: only the token routes in the contract, and only the plan and snapshot fields it lists;
+- `xfoundry/worker.py` and `xfoundry/status.py`: only the job states, moves and fields in the contract's `console` section;
 - `xfoundry/gate.py`: the approval, hash, snapshot, fingerprint, action and model checks;
 - `xfoundry/model.py`: output must be valid `nirvana.snapshot/1` marked `source.kind: "model"`;
 - `xfoundry.environment/1` and `contracts/environment.schema.json` (owned here; Nirvana will import it);

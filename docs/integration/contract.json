@@ -1,24 +1,41 @@
 {
   "contract": "nirvana-xfoundry",
-  "version": 1,
+  "version": 2,
   "updated": "2026-10-21",
   "note": "Mirrored byte for byte in Broham01/Nirvana-xStage and Broham01/Nirvana-xFoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
   "nirvana_api": {
-    "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write"]},
+    "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write", "jobs:read", "jobs:write", "environments:status"]},
     "token_routes": [
       {"method": "GET", "path": "/api/v1/snapshots", "scope": "snapshots:read"},
       {"method": "POST", "path": "/api/v1/snapshots", "scope": "snapshots:write"},
       {"method": "GET", "path": "/api/v1/plans", "scope": "plans:read"},
       {"method": "GET", "path": "/api/v1/plans/{id}", "scope": "plans:read"},
-      {"method": "POST", "path": "/api/v1/plans", "scope": "plans:write"}
+      {"method": "POST", "path": "/api/v1/plans", "scope": "plans:write"},
+      {"method": "POST", "path": "/api/v1/foundry/jobs/claim", "scope": "jobs:write"},
+      {"method": "GET", "path": "/api/v1/foundry/jobs/{id}", "scope": "jobs:read"},
+      {"method": "POST", "path": "/api/v1/foundry/jobs/{id}/progress", "scope": "jobs:write"},
+      {"method": "PUT", "path": "/api/v1/foundry/environments/{id}/status", "scope": "environments:status"}
     ],
-    "never_reachable_with_a_token": ["/api/v1/plans/{id}/decision", "/api/v1/tokens", "/api/v1/models", "/api/v1/projects", "/api/v1/system/update"],
+    "never_reachable_with_a_token": ["/api/v1/plans/{id}/decision", "/api/v1/tokens", "/api/v1/models", "/api/v1/projects", "/api/v1/system/update", "/api/v1/events", "/api/v1/foundry/environments", "/api/v1/foundry/environments/{id}", "/api/v1/foundry/environments/{id}/jobs", "/api/v1/foundry/jobs", "/api/v1/foundry/jobs/{id}/cancel", "/api/v1/foundry/workers"],
     "idempotency": "Every POST carries an Idempotency-Key. The same key with a different body is refused (409), so a key is derived from the whole request.",
     "plan_states": ["review", "approved", "changes_requested"],
     "plan_fields_read_by_xfoundry": ["id", "state", "status", "highs", "snapshot_id", "script", "decision_note"],
     "plan_create_fields": ["snapshot_id", "script", "title", "file_name", "parameters"],
     "plan_delete_parameter": {"Mode": "delete"},
     "snapshot_fields_read_by_xfoundry": ["id"]
+  },
+  "console": {
+    "decision": "xStage ADR 0014 and xFoundry ADR 0004: one console in xStage; xFoundry runs as a worker that claims jobs a person queued. A job never applies by itself: the worker plans it, a person approves the plan, the gate decides.",
+    "job_actions": ["create", "prune", "destroy", "check"],
+    "job_states": ["queued", "running", "waiting_approval", "applying", "succeeded", "failed", "cancelled"],
+    "worker_may_set": {"running": ["running", "waiting_approval", "applying", "succeeded", "failed", "cancelled"], "waiting_approval": ["waiting_approval", "running", "applying", "failed", "cancelled"], "applying": ["applying", "running", "succeeded", "failed"]},
+    "claim_request_fields": ["info"],
+    "claimed_job_fields_read_by_xfoundry": ["id", "environment_id", "environment_name", "action", "state", "spec", "spec_revision", "plan_id", "cancel_requested"],
+    "progress_fields": ["message", "level", "state", "plan_id", "error"],
+    "status_fields": ["state", "message", "namespace", "applied", "manifest_hash", "members", "checked_at"],
+    "member_fields": ["name", "kind", "role", "product", "phase", "ready", "addresses"],
+    "environment_states": ["unknown", "absent", "pending", "ready", "degraded"],
+    "rules": ["A claimed job comes back to the same token until it finishes, so a restarted worker resumes it.", "Moving to applying is refused once a person asked to cancel; the worker must stop before applying.", "Status is shown to the person and never used as change evidence; only the gate's fresh snapshot is."]
   },
   "snapshot_format": {
     "format": "nirvana.snapshot/1",
@@ -51,6 +68,6 @@
   "approval_rule": "Only a person signed in to Nirvana approves. No token, scope or xFoundry code path may approve or request changes.",
   "open_items": [
     {"id": "power-half", "text": "power: half differs. Nirvana's vSphere model generator powers on every other VM (index 0, 2, 4…); xFoundry powers on the first half, rounded up. Agree one rule before Nirvana imports xfoundry.environment/1 (ADR 0012 step 3)."},
-    {"id": "decision-webhook", "text": "xFoundry polls GET /api/v1/plans/{id} for decisions. A webhook is not built (xFoundry ADR 0002 item 5)."}
+    {"id": "decision-webhook", "text": "The worker polls GET /api/v1/plans/{id} for decisions every few seconds. A webhook or a token event stream is not built (xFoundry ADR 0002 item 5); browsers get live updates from /api/v1/events."}
   ]
 }
