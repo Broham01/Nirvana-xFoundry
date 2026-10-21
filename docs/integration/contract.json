@@ -1,7 +1,7 @@
 {
   "contract": "nirvana-xfoundry",
   "version": 1,
-  "updated": "2026-10-20",
+  "updated": "2026-10-21",
   "note": "Mirrored byte for byte in Broham01/Nirvana and Broham01/nirvana-xfoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
   "nirvana_api": {
     "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write"]},
@@ -51,7 +51,6 @@
   "approval_rule": "Only a person signed in to Nirvana approves. No token, scope or xFoundry code path may approve or request changes.",
   "open_items": [
     {"id": "power-half", "text": "power: half differs. Nirvana's vSphere model generator powers on every other VM (index 0, 2, 4…); xFoundry powers on the first half, rounded up. Agree one rule before Nirvana imports xfoundry.environment/1 (ADR 0012 step 3)."},
-    {"id": "decision-webhook", "text": "xFoundry polls GET /api/v1/plans/{id} for decisions. A webhook is not built (xFoundry ADR 0002 item 5)."},
-    {"id": "kube-ovn-vpc", "text": "Kube-OVN Vpc plans at partial confidence in Nirvana (xFoundry ADR 0002 item 7, proposed)."}
+    {"id": "decision-webhook", "text": "xFoundry polls GET /api/v1/plans/{id} for decisions. A webhook is not built (xFoundry ADR 0002 item 5)."}
   ]
 }

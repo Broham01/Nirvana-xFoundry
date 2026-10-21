@@ -1,6 +1,6 @@
 # ADR 0002: Nirvana integration (plan, approve, then apply)
 
-Date: 2026-10-20 · Accepted. Nirvana items 1–4 are built and merged in [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013); 5 is polling for now; 6 is open; 7 is proposed.
+Date: 2026-10-20 · Accepted. Nirvana items 1–4 are built and merged in [Nirvana PR #1](https://github.com/Broham01/Nirvana/pull/1) (Nirvana ADR 0013); 5 is polling for now; 6 is open; 7 is done (2026-10-21).
 
 ## Decision
 
@@ -35,7 +35,7 @@ A plan made against a model can be reviewed, but its fingerprint will never matc
    - a VM labelled `nirvana.io/protected` is a protected target.
 5. **Decision notification.** A webhook on decision, or keep polling `GET /plans/{id}` (enough for now).
 6. **Kubernetes models from `xfoundry.environment/1`.** ADR 0012 step 3 imports this spec, with the schema vendored from this repo, rather than inventing its own.
-7. **Kube-OVN `Vpc` as a known kind** (proposed 2026-10-20, not made): today it plans at `partial`; see [ADR 0003](0003-local-dev-platform.md).
+7. **Kube-OVN `Vpc` as a known kind**: done 2026-10-21. It is modelled, and routing changes are flagged.
 
 ## Verified live (2026-10-20, Nirvana PR #1)
 

@@ -51,4 +51,3 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 
 - **`power: half` differs.** Nirvana's vSphere model generator powers on every other VM; xFoundry powers on the first half, rounded up. Agree one rule before Nirvana imports `xfoundry.environment/1`.
 - **Decisions are polled.** xFoundry polls `GET /api/v1/plans/{id}`; there is no webhook yet.
-- **Kube-OVN `Vpc`** plans at partial confidence in Nirvana (proposed in xFoundry ADR 0002, item 7).
