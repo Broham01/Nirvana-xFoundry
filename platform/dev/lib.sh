@@ -4,6 +4,11 @@
 #  - Docker: commands go to xFoundry's own Colima VM through DOCKER_CONTEXT (this process only; `docker context use`
 #    is never called, so your default stays Docker Desktop).
 #  - Kubernetes: the cluster lives in its own kubeconfig file (platform/dev/.kubeconfig), not ~/.kube/config.
+# Started from xStage (or at login) the PATH is short: also look where Docker Desktop and Homebrew keep their tools.
+for d in /Applications/Docker.app/Contents/Resources/bin "$HOME/.docker/bin" /opt/homebrew/bin /usr/local/bin; do
+  if [ -d "$d" ]; then case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac; fi
+done
+export PATH
 DEV_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=versions.env
 source "$DEV_DIR/versions.env"

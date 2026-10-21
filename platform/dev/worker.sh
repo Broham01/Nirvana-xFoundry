@@ -10,6 +10,11 @@
 #   NIRVANA_TOKEN the worker's service token; by default read from the Keychain item "nirvana-xfoundry-token",
 #                 which "Set xFoundry token.command" stores. It is never printed.
 set -euo pipefail
+# Started from xStage (or at login) the PATH is short: also look where Docker Desktop and Homebrew keep their tools.
+for d in /Applications/Docker.app/Contents/Resources/bin "$HOME/.docker/bin" /opt/homebrew/bin /usr/local/bin; do
+  if [ -d "$d" ]; then case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac; fi
+done
+export PATH
 DEV_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$DEV_DIR/../.." && pwd)
 cd "$ROOT"
