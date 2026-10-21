@@ -134,7 +134,7 @@ Each change goes through Nirvana like the first one.
    ```
 2. **Tear down:** `xfoundry run examples/dev-lab.yaml --action destroy`. Nirvana lists everything that will be deleted.
 
-`platform/dev/stop.sh` pauses the whole platform; `up.sh` brings it back with the environment intact.
+`platform/dev/stop.sh` pauses the whole platform; `up.sh` brings it back with the environment intact. From the browser: **Start platform** and **Stop** on xStage's Environments page do the same (xStage ADR 0016).
 
 ## Troubleshooting
 
