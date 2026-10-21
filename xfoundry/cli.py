@@ -164,6 +164,18 @@ def _context(a) -> str | None:
     return getattr(a, 'context', None) or os.environ.get('XFOUNDRY_KUBE_CONTEXT')
 
 
+def installed_custom(context: str | None) -> list[str]:
+    """The custom resources xFoundry renders that this cluster actually has. Nirvana's collector stops on a resource
+    type the cluster doesn't know (the dev platform has no Argo CD, for example), so ask only for installed ones."""
+    try:
+        out = subprocess.run(['kubectl', *(['--context', context] if context else []), 'get', 'crd', '-o', 'name'],
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f'Could not list the cluster\'s custom resource definitions: {exc}. Nothing was changed.')
+    have = {line.split('/', 1)[-1].strip() for line in out.splitlines() if line.strip()}
+    return [r for r in model.COLLECT_CUSTOM if r in have]
+
+
 def collect(output: str, context: str | None, collector: str | None = None) -> str:
     """Run Nirvana's read-only collector (scripts/collect-k8s-snapshot.py) with the custom resources xFoundry renders."""
     script = collector or (Path(os.environ['NIRVANA_DIR']) / 'scripts/collect-k8s-snapshot.py' if os.environ.get('NIRVANA_DIR') else None)
@@ -171,7 +183,7 @@ def collect(output: str, context: str | None, collector: str | None = None) -> s
         raise SystemExit('Set NIRVANA_DIR to your Nirvana checkout (or pass --collector) so xFoundry can use its snapshot collector.')
     cmd = [sys.executable, str(script), '-o', output, '--name', context or 'xfoundry']
     if context: cmd += ['--context', context]
-    for resource in model.COLLECT_CUSTOM: cmd += ['--custom', resource]
+    for resource in installed_custom(context): cmd += ['--custom', resource]
     proc = subprocess.run(cmd)
     if proc.returncode: raise SystemExit(f'The collector failed (exit {proc.returncode}). Nothing was changed.')
     return output

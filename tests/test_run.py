@@ -46,7 +46,12 @@ def world(tmp_path, monkeypatch):
                          f"shutil.copy('{tmp_path}/snap.json', out)\n")
     bin_dir = tmp_path / 'bin'; bin_dir.mkdir()
     kubectl = bin_dir / 'kubectl'
-    kubectl.write_text(f"#!/bin/sh\necho \"$@\" > {tmp_path}/kubectl.args\ncat > {tmp_path}/kubectl.stdin\n")
+    # `kubectl get crd -o name` lists what the dev platform has: no Argo CD.
+    kubectl.write_text(f"#!/bin/sh\ncase \"$*\" in *'get crd -o name'*) printf '%s\\n' "
+                       "customresourcedefinition.apiextensions.k8s.io/virtualmachines.kubevirt.io "
+                       "customresourcedefinition.apiextensions.k8s.io/vpcs.kubeovn.io "
+                       "customresourcedefinition.apiextensions.k8s.io/subnets.kubeovn.io; exit 0;; esac\n"
+                       f"echo \"$@\" > {tmp_path}/kubectl.args\ncat > {tmp_path}/kubectl.stdin\n")
     kubectl.chmod(kubectl.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv('PATH', f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(cli.time, 'sleep', lambda s: None)
@@ -62,6 +67,7 @@ def test_run_applies_only_after_approval(world, monkeypatch):
     assert (tmp / 'kubectl.stdin').read_text() == fake.plans['p1']['script']   # exactly the approved bytes
     args = (tmp / 'collector.args').read_text().splitlines()
     assert len(args) == 2 and '--custom vpcs.kubeovn.io' in args[0] and '--context kind-xfoundry' in args[0]
+    assert 'applications.argoproj.io' not in args[0]          # not installed on this cluster, so not asked for
     ledger = json.loads((tmp / '.xfoundry/edge-lab.json').read_text())
     assert ledger['applied_manifest'] == fake.plans['p1']['script'] and 'create' not in ledger['plans']
 
