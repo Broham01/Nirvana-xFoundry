@@ -45,6 +45,19 @@ else
 fi
 write_env
 
+step "kubelet: allow routers to forward (net.ipv4.ip_forward)"
+# Router and firewall pods set net.ipv4.ip_forward=1 in their own network namespace. Kubernetes counts it as an unsafe
+# sysctl, so the kubelet must allow it. Only that one is allowed, and the kubelet restarts only when this changes it.
+for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+  if docker exec "$node" grep -q 'net.ipv4.ip_forward' /var/lib/kubelet/config.yaml; then
+    echo "$node: already allowed"
+  else
+    docker exec "$node" sh -c 'printf "allowedUnsafeSysctls:\n- net.ipv4.ip_forward\n" >> /var/lib/kubelet/config.yaml && systemctl restart kubelet'
+    echo "$node: allowed; kubelet restarted"
+  fi
+done
+k wait node --all --for condition=Ready --timeout=3m >/dev/null 2>&1 || true
+
 step "openvswitch kernel module (xFoundry VM)"
 # Pods may not load kernel modules, and the runtime VM forgets loaded modules when it restarts (for example after a
 # memory change in Docker Desktop), so load it here on every run, from a privileged helper in the VM's own namespaces.

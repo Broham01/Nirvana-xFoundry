@@ -252,3 +252,29 @@ def test_networks_no_router_joins_cannot_reach_each_other(arm64):
 def test_load_balancers_do_not_route():
     routes = vpc_of(render(load(EXAMPLE)))['spec']['policyRoutes']
     assert {r['nextHopIP'] for r in routes if r['action'] == 'reroute'} == {'10.60.0.2', '10.60.10.1', '10.60.20.1'}   # fw01 only
+
+
+# ---- routers forward; other appliances route through them
+
+def deployment(objects, name):
+    return next(o for o in objects if o['kind'] == 'Deployment' and o['metadata']['name'] == name)
+
+
+def test_router_pods_forward(arm64):
+    rt = deployment(render(load(DEV)), 'rt01')
+    assert rt['spec']['template']['spec']['securityContext']['sysctls'] == [{'name': 'net.ipv4.ip_forward', 'value': '1'}]
+
+
+def test_appliance_pods_route_other_networks_through_the_router(arm64):
+    import json as _json
+    lb = deployment(render(load(DEV)), 'lb01')
+    ann = lb['spec']['template']['metadata']['annotations']
+    assert _json.loads(ann['net-front.xf-dev-lab.ovn.kubernetes.io/routes']) == [{'dst': '10.70.20.0/24', 'gw': '10.70.10.1'}]
+    assert 'securityContext' not in lb['spec']['template']['spec']          # a load balancer does not forward
+
+
+def test_no_routes_when_no_router_joins(arm64):
+    spec = yaml.safe_load(DEV.read_text())
+    spec['appliances'] = [a for a in spec['appliances'] if a['name'] != 'rt01']
+    lb = deployment(render(check(spec)), 'lb01')
+    assert not [k for k in lb['spec']['template']['metadata']['annotations'] if k.endswith('/routes')]

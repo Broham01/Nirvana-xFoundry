@@ -86,15 +86,41 @@ Day 2:
 - **Scale down:** set `count: 1`, then `xfoundry run examples/dev-lab.yaml --action prune` (Nirvana flags the disk that will be lost).
 - **Remove everything:** `xfoundry run examples/dev-lab.yaml --action destroy`.
 
-## 4. What to check once it's running
+## 4. Check that it works (the exit test)
 
-- **Both routers.** On each subnet, OVN's router sits on `.254`; the FRR pod `rt01` holds `.1`, and DHCP gives the VMs `.1` as their default route. In a VM: `ip route` should show `default via 10.70.20.1`.
-- **Static addresses.** `lb01` has `10.70.10.10`: `kubectl -n xf-dev-lab get ips`.
-- **HAProxy.** `kubectl -n xf-dev-lab port-forward deploy/lb01 8404` and open `http://localhost:8404/stats`.
+```sh
+platform/dev/verify.sh             # appliances ready, VMs Running, a routed ping from the load balancer to each VM
+```
 
-- **Isolation.** The environment has its own VPC: `kubectl get vpc xf-dev-lab -o yaml` shows two `reroute` policies, one each way through `rt01`. The VMs cannot reach pods on the cluster network or another environment's subnets.
+The ping from `lb01` (front subnet) to each VM (app subnet) only succeeds if:
+- `rt01` forwards between its interfaces (`net.ipv4.ip_forward=1`, which `up.sh` lets the kubelet allow);
+- `lb01` routes the app subnet through `rt01` (a Kube-OVN per-interface route xFoundry adds);
+- the VM got `rt01` as its default route from DHCP.
 
-Nirvana shows the VPC as "1 not verified" because its planner doesn't know the `Vpc` kind yet ([ADR 0003](../../docs/adr/0003-local-dev-platform.md)). The plan is still complete and can be approved.
+Then plan the same spec again. Nirvana should show every object unchanged, against a collected snapshot with no Modelled badge:
+
+```sh
+xfoundry collect -o fresh.snapshot.json
+xfoundry plan examples/dev-lab.yaml --snapshot fresh.snapshot.json
+```
+
+Other things worth a look:
+- OVN's router sits on `.254` of each subnet, and `rt01` holds `.1`: `kubectl get subnet xf-dev-lab-app -o yaml`.
+- The VPC reroutes traffic between the subnets through `rt01`: `kubectl get vpc xf-dev-lab -o yaml`.
+- HAProxy stats: `kubectl -n xf-dev-lab port-forward deploy/lb01 8404`, then open `http://localhost:8404/stats`.
+
+## 5. Day 2: scale down, then tear down
+
+Each change goes through Nirvana like the first one.
+
+1. **Scale down:** in `examples/dev-lab.yaml` set the VM group's `count: 1`, then:
+   ```sh
+   xfoundry run examples/dev-lab.yaml --action prune    # Nirvana flags app-02's disk as lost; approve to delete it
+   xfoundry run examples/dev-lab.yaml                   # brings the rest in line with the spec (usually no changes)
+   ```
+2. **Tear down:** `xfoundry run examples/dev-lab.yaml --action destroy`. Nirvana lists everything that will be deleted.
+
+`platform/dev/stop.sh` pauses the whole platform; `up.sh` brings it back with the environment intact.
 
 ## Troubleshooting
 

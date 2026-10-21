@@ -38,6 +38,27 @@ def _nad(network: str) -> str:
     return f'net-{network}'
 
 
+ROUTERS = ('router', 'firewall')
+
+
+def _route_annotations(spec: dict, ns: str, a: dict) -> dict:
+    """A pod's default route is the cluster network, so an appliance pod that is not itself a router needs routes to
+    the environment's other networks through the router that joins them, or its replies leave by the wrong interface.
+    Kube-OVN applies them per interface from <provider>.kubernetes.io/routes."""
+    if a['role'] in ROUTERS: return {}
+    cidr = {n['name']: n['cidr'] for n in spec['networks']}
+    out = {}
+    for itf in a['interfaces']:
+        routes, seen = [], set()
+        for r in spec['_routes']:
+            if r['from'] == itf['network'] and r['to'] not in seen and r['to'] not in {i['network'] for i in a['interfaces']}:
+                seen.add(r['to'])
+                routes.append({'dst': cidr[r['to']], 'gw': r['next_hop']})
+        if routes:
+            out[f"{_nad(itf['network'])}.{ns}.ovn.kubernetes.io/routes"] = json.dumps(routes, separators=(',', ':'))
+    return out
+
+
 def _ip_annotations(ns: str, interfaces: list[dict]) -> dict:
     # Kube-OVN reads a fixed address per attachment from <nad>.<namespace>.ovn.kubernetes.io/ip_address.
     return {f"{_nad(i['network'])}.{ns}.ovn.kubernetes.io/ip_address": i['address'] for i in interfaces if i.get('address')}
@@ -146,6 +167,11 @@ def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protect
     if product.get('privileged_net'):
         # A router manages routes and addresses on its interfaces.
         container['securityContext'] = {'capabilities': {'add': ['NET_ADMIN', 'NET_RAW', 'SYS_ADMIN']}}
+    if a['role'] in ROUTERS:
+        # A new pod network namespace starts with forwarding off; a router must forward between its interfaces.
+        # net.ipv4.ip_forward is not one of Kubernetes' safe sysctls, so the kubelet must allow it
+        # (platform/dev/up.sh does; the cloud platform's kubelet config must too).
+        pod['securityContext'] = {'sysctls': [{'name': 'net.ipv4.ip_forward', 'value': '1'}]}
     out.append({
         'apiVersion': 'apps/v1', 'kind': 'Deployment',
         'metadata': {'name': name, 'namespace': ns, 'labels': {**_labels(spec, a['role'], protected), 'xfoundry.io/product': a['product']}},
@@ -154,8 +180,9 @@ def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protect
             'strategy': {'type': 'Recreate'},  # fixed addresses: two pods must never hold the same IP at once
             'selector': {'matchLabels': selector},
             'template': {
-                'metadata': {'labels': {**MANAGED, **selector},
-                             'annotations': {'k8s.v1.cni.cncf.io/networks': attach, **_ip_annotations(ns, a['interfaces'])}},
+                'metadata': {'labels': {**MANAGED, **selector, 'xfoundry.io/role': a['role']},
+                             'annotations': {'k8s.v1.cni.cncf.io/networks': attach, **_ip_annotations(ns, a['interfaces']),
+                                             **_route_annotations(spec, ns, a)}},
                 'spec': pod},
         },
     })
