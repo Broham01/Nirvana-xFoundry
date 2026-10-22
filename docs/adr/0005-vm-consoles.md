@@ -8,7 +8,7 @@ Date: 2026-10-22 · Accepted. xStage [ADR 0017](https://github.com/Broham01/Nirv
 
 - **Identity:** the `vm-console` ServiceAccount (`platform/console-rbac.yaml`): `get` on `virtualmachineinstances/vnc` and `/console`, `get`/`list` on VMIs. Never xFoundry's own kubeconfig. Its kubeconfig is written with mode 600 to the git-ignored `platform/dev/.console-kubeconfig`.
 - **Filter:** only GET (a console is a GET upgraded to a WebSocket), only the VNC and serial-console paths, only from localhost.
-- **Link:** `http://localhost:8011/console/vnc.html?autoconnect=1&path=k8s/apis/subresources.kubevirt.io/v1/namespaces/<ns>/virtualmachineinstances/<vm>/vnc`.
+- **Link:** `http://localhost:8011/console/vnc.html?autoconnect=1&path=/k8s/apis/subresources.kubevirt.io/v1/namespaces/<ns>/virtualmachineinstances/<vm>/vnc`.
 
 xStage's supervisor runs it next to the worker and links to it from each running VM. A console is not a change: nothing is applied, so the gate is not involved.
 
