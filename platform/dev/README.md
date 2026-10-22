@@ -62,6 +62,8 @@ Once the platform is up, everything below can be done from Nirvana xStage's **En
 
 Scaling: edit `count` in the spec, **Save spec**, **Apply spec changes** (adds VMs); after lowering a count, **Remove scaled-down objects** (deletes the extra VMs). **Destroy** removes everything, again only after you approve its plan. **Check** validates the spec and refreshes the status without planning anything.
 
+**VM consoles:** each running VM on xStage's environment page has **Open console**, which opens its screen in a new tab. xStage runs `platform/dev/console.sh` for you: noVNC behind a view-only proxy on `localhost:8011` ([ADR 0005](../../docs/adr/0005-vm-consoles.md)). The first time, use **Run setup again** so `up.sh` adds the console identity and downloads noVNC. CirrOS logs in as `cirros` / `gocubsgo`.
+
 When the worker stops (xStage restarts or updates), a job waiting for approval carries on when it starts again. The CLI below still works, and both use the same ledger.
 
 ## 4. The loop from a terminal

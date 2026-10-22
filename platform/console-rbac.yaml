@@ -1,0 +1,38 @@
+# Identity for VM consoles in the browser (ADR 0005). It can open a VM's screen (VNC) and serial console and read
+# which VMs exist; it cannot create, change or delete anything, and cannot exec into pods. platform/dev/console.sh
+# runs `kubectl proxy` with this identity only, on 127.0.0.1, for the noVNC page.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xfoundry-system
+  labels: {app.kubernetes.io/managed-by: xfoundry, nirvana.io/protected: "true"}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: vm-console, namespace: xfoundry-system}
+---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: vm-console-token
+  namespace: xfoundry-system
+  annotations: {kubernetes.io/service-account.name: vm-console}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: xfoundry-vm-console}
+rules:
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/vnc, virtualmachineinstances/console]
+  verbs: [get]
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachineinstances]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: xfoundry-vm-console}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: xfoundry-vm-console}
+subjects:
+- {kind: ServiceAccount, name: vm-console, namespace: xfoundry-system}
