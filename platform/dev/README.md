@@ -144,5 +144,6 @@ Each change goes through Nirvana like the first one.
 - **Pods stuck in `ContainerCreating` with `multus-shim ... failed to send CNI request: EOF`:** Multus's daemon ran out of memory. Its upstream manifest allows only 50Mi; `up.sh` raises it to 512Mi. On a cluster made before that fix, run `up.sh` again, and the stuck pods recover by themselves.
 - **VMs stuck in `Scheduling`:** xFoundry's VM is short on memory. Recreate it bigger: `down.sh` (say yes to deleting the VM), then `XFOUNDRY_VM_MEMORY=12 platform/dev/up.sh`.
 - **VMs slow to boot:** expected in emulation; CirrOS takes a minute or two.
+- **VMs stuck in `Provisioning` with `ErrClaimNotValid ... cannot get access mode from StorageProfile standard`:** CDI does not know kind's storage class. `up.sh` (or **Run setup again** in xStage) sets its StorageProfile to ReadWriteOnce/Filesystem and makes the stuck disks retry.
 - **`DataVolume` stuck importing:** check `kubectl -n xf-dev-lab logs -l app=containerized-data-importer`; the image must have an arm64 variant (preflight checks the defaults).
 - **Start over:** `platform/dev/down.sh`, then `up.sh`. Docker Desktop is never touched.

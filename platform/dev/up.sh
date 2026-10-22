@@ -120,6 +120,22 @@ k apply -f "https://github.com/kubevirt/containerized-data-importer/releases/dow
 k apply -f "https://github.com/kubevirt/containerized-data-importer/releases/download/$CDI_VERSION/cdi-cr.yaml"
 wait_for cdi cdi/cdi Available 15 || exit 1
 
+step "Disk storage profile (how CDI creates VM disks)"
+# kind's storage class (rancher local-path) is not in CDI's list of known provisioners, so its StorageProfile has no
+# access or volume mode and every VM disk fails with "ErrClaimNotValid ... cannot get access mode from StorageProfile".
+# Local-path volumes are single-node filesystem volumes: ReadWriteOnce, Filesystem. Safe to repeat.
+for _ in $(seq 1 30); do k get storageprofile standard >/dev/null 2>&1 && break; sleep 2; done
+for sp in $(k get storageprofiles -o name 2>/dev/null); do
+  if [ -z "$(k get "$sp" -o jsonpath='{.status.claimPropertySets}')" ]; then
+    k patch "$sp" --type merge -p '{"spec":{"claimPropertySets":[{"accessModes":["ReadWriteOnce"],"volumeMode":"Filesystem"}]}}' || true
+  fi
+done
+# VM disks that already failed on the missing profile are looked at again (an annotation change makes CDI retry).
+k get datavolumes -A -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null |
+  while read -r ns dv; do
+    [ -n "$dv" ] && k -n "$ns" annotate datavolume "$dv" xfoundry.io/storage-profile-retry="$(date +%s)" --overwrite >/dev/null && echo "  retrying disk $ns/$dv"
+  done || true
+
 step "Snapshot collector identity (read-only)"
 k apply -f ../collector-rbac.yaml
 
