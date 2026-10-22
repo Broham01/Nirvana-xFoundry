@@ -139,6 +139,14 @@ k get datavolumes -A -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}
 step "Snapshot collector identity (read-only)"
 k apply -f ../collector-rbac.yaml
 
+step "VM consoles (noVNC $NOVNC_VERSION, view-only identity)"
+k apply -f ../console-rbac.yaml
+if [ ! -f "$DEV_DIR/.novnc/$NOVNC_VERSION/vnc.html" ]; then
+  mkdir -p "$DEV_DIR/.novnc/$NOVNC_VERSION"
+  curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/$NOVNC_VERSION.tar.gz" | tar -xz -C "$DEV_DIR/.novnc/$NOVNC_VERSION" --strip-components 1 \
+    && echo "noVNC $NOVNC_VERSION downloaded." || echo "Could not download noVNC; VM consoles stay off until up.sh runs again."
+fi
+
 step "Ready"
 cat <<MSG
 Platform is up in xFoundry's VM '$XFOUNDRY_VM'. Docker Desktop and Nirvana were not touched.

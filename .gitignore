@@ -16,3 +16,5 @@ platform/dev/ovn*.yaml
 platform/dev/ovs-ovn*.yaml
 # the old one-off teardown script
 Teardown dev-lab.command
+platform/dev/.novnc/
+platform/dev/.console-kubeconfig
