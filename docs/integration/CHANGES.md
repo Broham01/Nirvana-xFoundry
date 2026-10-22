@@ -2,6 +2,7 @@
 
 Append-only. Add a dated line in **both** repos whenever either side changes something the other depends on: an API route, a field read across the boundary, the snapshot or spec format, the gate, or a rule in [CONTRACT.md](CONTRACT.md). Newest first. Say which side changed and what the other side must do, if anything.
 
+- 2026-10-22 · both · Status members may carry `detail` (optional, at most 500 characters): why a VM or appliance is not ready. Additive; contract version stays 2. xStage shows it on the environment page.
 - 2026-10-21 · both · Contract version 2: the console. xStage gains live updates for browsers (`/api/v1/events`), environments and jobs, and four token routes for the xFoundry worker (claim a job, read it, report progress, report environment status) with scopes `jobs:read`, `jobs:write`, `environments:status`. xFoundry gains `xfoundry worker`. Other side: xFoundry must use only these routes and states (done in the same change); a worker needs a new token with the new scopes (tokens made before today lack them).
 - 2026-10-21 · both · Nirvana is renamed Nirvana xStage (repo `Broham01/Nirvana-xStage`); xFoundry's repo is `Broham01/Nirvana-xFoundry`. Contract wording and links updated; no route, scope, field, format or setting changed (`NIRVANA_URL`, `NIRVANA_TOKEN`, `NIRVANA_DIR` keep their names). Other side: none beyond pulling.
 - 2026-10-21 · Nirvana · The Kubernetes planner models Kube-OVN `Vpc` (no longer partial) and flags VPC routing changes. xFoundry: none; closes ADR 0002 item 7.

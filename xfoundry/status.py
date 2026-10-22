@@ -45,6 +45,53 @@ def expected(spec: dict) -> list[dict]:
     return out
 
 
+def _items(context, *args) -> list[dict]:
+    code, out = _kubectl(context, 'get', *args, '-o', 'json')
+    if code != 0: return []
+    try: return json.loads(out).get('items', [])
+    except ValueError: return []
+
+
+def reasons(context: str | None, ns: str, names: list[str]) -> dict[str, str]:
+    """Why each not-ready VM or appliance is stuck, in one line: its disk import, its pods' waiting reasons and the
+    latest warning event. Read-only; empty for anything it cannot explain."""
+    if not names: return {}
+    dvs = _items(context, 'datavolumes', '-n', ns)
+    pods = _items(context, 'pods', '-n', ns)
+    warnings = sorted(_items(context, 'events', '-n', ns, '--field-selector', 'type=Warning'),
+                      key=lambda e: e.get('lastTimestamp') or e.get('eventTime') or '')
+    out = {}
+    for name in names:
+        parts = []
+        for dv in dvs:
+            if dv['metadata']['name'] != f'{name}-root': continue
+            st = dv.get('status', {})
+            phase, progress = st.get('phase', ''), st.get('progress', '')
+            if phase and phase != 'Succeeded':
+                text = f"disk {phase}{f' {progress}' if progress and progress != 'N/A' else ''}"
+                cond = next((c for c in st.get('conditions', []) if c.get('status') != 'True' and c.get('message')), None)
+                if cond: text += f" ({cond['message'][:140]})"
+                parts.append(text)
+        related = [p for p in pods if name in p['metadata']['name'] or p['metadata'].get('labels', {}).get('vm.kubevirt.io/name') == name
+                   or p['metadata'].get('labels', {}).get('xfoundry.io/appliance') == name]
+        for pod in related:
+            st = pod.get('status', {})
+            waiting = [c['state']['waiting'] for c in st.get('containerStatuses', []) + st.get('initContainerStatuses', [])
+                       if c.get('state', {}).get('waiting')]
+            pod_name = pod['metadata']['name']
+            if waiting:
+                reason, message = waiting[0].get('reason', 'waiting'), waiting[0].get('message', '')
+                parts.append(f'pod {pod_name}: {reason}' + (f' ({message[:140]})' if message else ''))
+            elif st.get('phase') == 'Pending':
+                cond = next((c for c in st.get('conditions', []) if c.get('status') == 'False' and c.get('message')), None)
+                parts.append(f'pod {pod_name}: Pending' + (f" ({cond['message'][:140]})" if cond else ''))
+        involved = {name, f'{name}-root', *(p['metadata']['name'] for p in related)}
+        last = next((e for e in reversed(warnings) if e.get('involvedObject', {}).get('name') in involved), None)
+        if last: parts.append(f"{last.get('reason', 'Warning')}: {last.get('message', '')[:200]}")
+        if parts: out[name] = '; '.join(parts)[:480]
+    return out
+
+
 def observe(spec: dict, context: str | None = None, applied_manifest: str | None = None) -> dict:
     ns = namespace_of(spec)
     now = datetime.now(timezone.utc).isoformat()
@@ -80,6 +127,8 @@ def observe(spec: dict, context: str | None = None, applied_manifest: str | None
         elif not ready and (phase in STARTING or phase == 'Starting' or phase == ''): starting += 1
         members.append({'name': m['name'], 'kind': m['kind'], 'role': m['role'], 'product': m['product'], 'phase': phase or 'Unknown',
                         'ready': ready, 'addresses': addresses[:16]})
+    for name, why in reasons(context, ns, [m['name'] for m in members if not m['ready']]).items():
+        next(m for m in members if m['name'] == name)['detail'] = why
     ready = sum(1 for m in members if m['ready'])
     vms = [m for m in members if m['kind'] == 'vm']
     summary = f"{sum(1 for m in vms if m['ready'])} of {len(vms)} VMs and {sum(1 for m in members if m['kind'] == 'appliance' and m['ready'])} of {len(members) - len(vms)} appliances ready"
