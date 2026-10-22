@@ -1,5 +1,5 @@
-# Identity for VM consoles in the browser (ADR 0005). It can open a VM's screen (VNC) and serial console and read
-# which VMs exist; it cannot create, change or delete anything, and cannot exec into pods. platform/dev/console.sh
+# Identity for VM consoles and logs in the browser (ADR 0005, 0006). It can open a VM's screen (VNC) and serial console,
+# read which VMs and pods exist, and read pod logs; it cannot create, change or delete anything, and cannot exec into pods. platform/dev/console.sh
 # runs `kubectl proxy` with this identity only, on 127.0.0.1, for the noVNC page.
 apiVersion: v1
 kind: Namespace
@@ -28,6 +28,9 @@ rules:
   verbs: [get]
 - apiGroups: [kubevirt.io]
   resources: [virtualmachineinstances]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [pods, pods/log]
   verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
