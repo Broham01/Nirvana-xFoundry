@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logs · xFoundry</title>
+<!-- Read-only pod logs (ADR 0006), served by console.sh next to noVNC. It reads through the same view-only proxy:
+     a namespace's pod list and a pod's log, GET only. Log text is shown as text, never as HTML. -->
+<style>
+:root{--bg:#12110F;--surface:#191715;--line:#2F2C28;--text:#EDE8E0;--muted:#A8A197;--amber:#F0A63A;--red:#E5675A}
+@media (prefers-color-scheme:light){:root{--bg:#F3F0EA;--surface:#FBFAF7;--line:#DDD8CF;--text:#1C1A17;--muted:#5E5850;--amber:#9A5B00;--red:#B42318}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg)}
+h1{margin:0;font-size:16px;font-weight:600}
+.muted{color:var(--muted);font-size:13px}
+select,button,label{font:inherit;font-size:14px}
+select,button{min-height:36px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text)}
+button{cursor:pointer}
+label{display:inline-flex;gap:6px;align-items:center;color:var(--muted)}
+.grow{flex:1}
+#status{font-size:13px;color:var(--muted)}
+#status.err{color:var(--red)}
+pre{margin:0;padding:16px 20px 40px;font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;overflow-x:auto}
+pre.wrap{white-space:pre-wrap;overflow-wrap:anywhere}
+.ts{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Logs</h1>
+  <label>Pod <select id="pod" aria-label="Pod"></select></label>
+  <label>Container <select id="container" aria-label="Container"></select></label>
+  <span class="grow"></span>
+  <label><input type="checkbox" id="follow" checked> Follow</label>
+  <label><input type="checkbox" id="wrap"> Wrap lines</label>
+  <button type="button" id="restart">Reload</button>
+  <span id="status" role="status">Starting…</span>
+</header>
+<pre id="out" aria-live="off"></pre>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const ns = q.get('ns') || '', appliance = q.get('appliance') || '', wanted = q.get('pod') || '';
+  const NAME = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/;
+  const $ = id => document.getElementById(id);
+  const out = $('out'), status = $('status'), podSel = $('pod'), conSel = $('container');
+  let controller = null, pods = [];
+  const say = (text, err) => { status.textContent = text; status.className = err ? 'err' : ''; };
+  if (!NAME.test(ns) || (appliance && !NAME.test(appliance)) || (wanted && !NAME.test(wanted)) || (!appliance && !wanted)) {
+    say('Open this page from an environment in xStage.', true); return;
+  }
+  $('title').textContent = `Logs · ${appliance || wanted} · ${ns}`;
+  document.title = `${appliance || wanted} logs · xFoundry`;
+  $('wrap').addEventListener('change', e => out.classList.toggle('wrap', e.target.checked));
+
+  async function listPods() {
+    const sel = appliance ? `?labelSelector=${encodeURIComponent('xfoundry.io/appliance=' + appliance)}` : '';
+    const r = await fetch(`/k8s/api/v1/namespaces/${ns}/pods${sel}`, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error(r.status === 403 ? 'The console identity cannot read pods: run setup again.' : `The cluster answered ${r.status}.`);
+    const items = (await r.json()).items || [];
+    pods = items.filter(p => !wanted || p.metadata.name === wanted).sort((a, b) => (b.metadata.creationTimestamp || '').localeCompare(a.metadata.creationTimestamp || ''));
+    podSel.replaceChildren(...pods.map(p => new Option(`${p.metadata.name} · ${p.status.phase}`, p.metadata.name)));
+    fillContainers();
+  }
+  function fillContainers() {
+    const pod = pods.find(p => p.metadata.name === podSel.value);
+    const names = pod ? (pod.spec.containers || []).map(c => c.name) : [];
+    conSel.replaceChildren(...names.map(n => new Option(n, n)));
+  }
+  async function stream() {
+    if (controller) controller.abort();
+    controller = new AbortController();
+    out.textContent = '';
+    const pod = podSel.value, container = conSel.value;
+    if (!pod) { say(appliance ? `No pod of ${appliance} in ${ns} yet.` : 'Pod not found.', true); return; }
+    const follow = $('follow').checked;
+    const url = `/k8s/api/v1/namespaces/${ns}/pods/${pod}/log?tailLines=1000&timestamps=true${container ? '&container=' + encodeURIComponent(container) : ''}${follow ? '&follow=true' : ''}`;
+    say(follow ? 'Following…' : 'Loading…');
+    try {
+      const r = await fetch(url, { signal: controller.signal });
+      if (!r.ok) { say(r.status === 400 ? 'The container has not started yet.' : `The cluster answered ${r.status}.`, true); return; }
+      const reader = r.body.getReader(), decoder = new TextDecoder();
+      let carry = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = carry + decoder.decode(value, { stream: true });
+        const lines = text.split('\n'); carry = lines.pop();
+        const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 40;
+        const frag = document.createDocumentFragment();
+        for (const line of lines) {
+          const cut = line.indexOf(' ');
+          const ts = document.createElement('span'); ts.className = 'ts';
+          ts.textContent = cut > 0 ? new Date(line.slice(0, cut)).toLocaleTimeString() + '  ' : '';
+          frag.append(ts, document.createTextNode((cut > 0 ? line.slice(cut + 1) : line) + '\n'));
+        }
+        out.append(frag);
+        while (out.childNodes.length > 20000) out.removeChild(out.firstChild);
+        if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+      }
+      say(follow ? 'The log stream ended (the pod may have restarted). Reload to follow again.' : 'Showing the last 1000 lines.');
+    } catch (e) { if (e.name !== 'AbortError') say('The log stream stopped. Is the dev platform running?', true); }
+  }
+  podSel.addEventListener('change', () => { fillContainers(); stream(); });
+  conSel.addEventListener('change', stream);
+  $('follow').addEventListener('change', stream);
+  $('restart').addEventListener('click', () => listPods().then(stream).catch(e => say(e.message, true)));
+  listPods().then(stream).catch(e => say(e.message, true));
+})();
+</script>
+</body>
+</html>

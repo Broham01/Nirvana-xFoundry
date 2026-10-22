@@ -68,5 +68,6 @@ Scale a VM group down by editing `count`, then `plan --action prune` / `apply --
 - [ADR 0001](docs/adr/0001-foundation.md): platform and tool choices.
 - [ADR 0002](docs/adr/0002-nirvana-integration.md): the plan → approve → gate → apply loop, and the Nirvana changes it needs.
 - [ADR 0003](docs/adr/0003-local-dev-platform.md): local dev platform first; architectures; routers and gateways on Kube-OVN.
+- [ADR 0006](docs/adr/0006-pod-logs.md): read-only pod logs in the browser, through the same view-only proxy.
 - [ADR 0005](docs/adr/0005-vm-consoles.md): VM consoles in the browser through a view-only proxy.
 - [ADR 0004](docs/adr/0004-worker.md): the worker: xStage's console drives xFoundry; a job never applies without an approved plan and the gate.

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# VM consoles in the browser (ADR 0005). Serves noVNC and a narrow proxy to the cluster on 127.0.0.1:$CONSOLE_PORT:
+# VM consoles and logs in the browser (ADR 0005, 0006). Serves noVNC, a log page and a narrow proxy to the cluster on 127.0.0.1:$CONSOLE_PORT:
 #   http://localhost:8011/console/vnc.html?autoconnect=1&path=/k8s/apis/subresources.kubevirt.io/v1/namespaces/<ns>/virtualmachineinstances/<vm>/vnc
+#   http://localhost:8011/console/logs.html?ns=<namespace>&appliance=<name>   (or &pod=<pod>)
 # The proxy uses the view-only vm-console identity (platform/console-rbac.yaml), never xFoundry's own credentials, accepts
-# only GET (a console is a GET upgraded to a WebSocket) on the VNC and serial-console paths, and answers only to localhost.
+# only GET (a console is a GET upgraded to a WebSocket) on the VNC and serial-console paths, a namespace's pod list and a
+# pod's log, and answers only to localhost.
 # kubectl proxy checks paths after removing /k8s, so the filter accepts them with or without it.
 # xStage's supervisor runs this for you; stop it with Ctrl-C.
 set -euo pipefail
@@ -25,8 +27,10 @@ users: [{name: vm-console, user: {token: "$TOKEN"}}]
 contexts: [{name: vm-console, context: {cluster: xfoundry, user: vm-console}}]
 current-context: vm-console
 CONF
+# The log page is served next to noVNC (the proxy serves one folder).
+cp "$(dirname "$0")/logs.html" "$WWW/logs.html"
 echo "VM consoles on http://localhost:$CONSOLE_PORT/console/ (view-only identity)."
 exec kubectl --kubeconfig "$CONF" proxy --address 127.0.0.1 --port "$CONSOLE_PORT" \
   --api-prefix=/k8s/ --www="$WWW" --www-prefix=/console/ \
-  --accept-paths='^(/k8s)?/apis/subresources\.kubevirt\.io/v1/namespaces/[^/]+/virtualmachineinstances/[^/]+/(vnc|console)$' \
+  --accept-paths='^(/k8s)?/apis/subresources\.kubevirt\.io/v1/namespaces/[^/]+/virtualmachineinstances/[^/]+/(vnc|console)$,^(/k8s)?/api/v1/namespaces/[^/]+/pods(/[^/]+/log)?$' \
   --reject-methods='^(POST|PUT|PATCH|DELETE|OPTIONS)$'
