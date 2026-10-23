@@ -2,6 +2,7 @@
 applied; cancel, send-back, gate refusal and bad specs end the job without changing anything. xStage, the
 collector, kubectl and the status reader are stand-ins."""
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -185,3 +186,15 @@ def test_restart_while_waiting_resumes_the_same_plan(world):
     w.once()
     assert xs.job['state'] == 'succeeded' and len(xs.plans) == 1, 'no second plan on resume'
     assert any('still waiting for the decision' in m for _, _, m in xs.steps)
+
+
+def test_only_one_worker_per_folder(tmp_path):
+    from xfoundry.worker import CODE, Worker, hold_lock
+    first = hold_lock(tmp_path / 'worker.lock')
+    with pytest.raises(SystemExit) as exc:
+        hold_lock(tmp_path / 'worker.lock')
+    assert 'Another xFoundry worker is already running' in str(exc.value) and str(os.getpid()) in str(exc.value)
+    first.close()
+    hold_lock(tmp_path / 'worker.lock').close()      # free again once the first one stops
+    info = Worker(client=object()).info()
+    assert info['pid'] == str(os.getpid()) and info['code'] == CODE and len(CODE) == 12

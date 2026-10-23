@@ -14,7 +14,10 @@ It is `xfoundry run` driven from the browser instead of a terminal, and it keeps
 """
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
+import os
 import platform
 import signal
 import time
@@ -34,6 +37,25 @@ WAIT_POLL = 5.0     # seconds between decision checks while a plan waits for app
 VERSION = '0.4.0'
 
 
+CODE = hashlib.sha256(spec_mod.SCHEMA_PATH.read_bytes()).hexdigest()[:12]   # which spec format this copy understands
+
+
+def hold_lock(path: Path):
+    """One worker per folder: a second one would race the first for jobs (and may be an older copy). Returns the
+    open lock file, which must stay open while the worker runs; raises SystemExit if another worker holds it."""
+    path.parent.mkdir(exist_ok=True)
+    handle = open(path, 'a+')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.seek(0); other = handle.read().strip()
+        handle.close()
+        raise SystemExit(f"Another xFoundry worker is already running from this folder{f' (process {other})' if other else ''}. "
+                         'Close it first: xStage runs the worker for you, so a Terminal window from "Start xFoundry worker.command" is not needed.')
+    handle.seek(0); handle.truncate(); handle.write(str(os.getpid())); handle.flush()
+    return handle
+
+
 class Stop(Exception):
     """The job ends here; the message has already been reported."""
 
@@ -50,8 +72,9 @@ class Worker:
     # ---- loop
 
     def info(self) -> dict:
+        # pid and code let xStage tell two workers on one token apart, and an old copy from a current one.
         return {'version': VERSION, 'platform': f'{platform.system()} {platform.machine()}', 'cluster': self.context or 'current context',
-                'host': platform.node()[:60]}
+                'host': platform.node()[:60], 'pid': str(os.getpid()), 'code': CODE}
 
     def run_forever(self):
         self.log(f'xFoundry worker {VERSION} checking in with {self.client.base} as {self.info()["host"]}. Ctrl-C stops it.')
@@ -198,6 +221,7 @@ class Worker:
 
 
 def main(context: str | None, collector: str | None, once: bool = False):
+    lock = hold_lock(LEDGER_DIR / 'worker.lock')   # noqa: F841 - held open for the life of the process
     worker = Worker(context=context, collector=collector)
     def stop(*_):
         worker.stopping = True
