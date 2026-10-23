@@ -116,12 +116,30 @@ def _networks(spec: dict, ns: str) -> list[dict]:
     return out
 
 
+def cloud_config(display: str, ci: dict) -> str:
+    """cloud-init user data for one VM: hostname, one sudo user with SSH keys and an optional password hash
+    (never a plain password), and packages. Deterministic, so the manifest hash is the same at plan and apply."""
+    user = {'name': ci['user'], 'sudo': 'ALL=(ALL) NOPASSWD:ALL', 'shell': '/bin/bash', 'groups': ['sudo'],
+            'lock_passwd': 'password_hash' not in ci}
+    if ci.get('ssh_keys'): user['ssh_authorized_keys'] = list(ci['ssh_keys'])
+    if ci.get('password_hash'): user['passwd'] = ci['password_hash']
+    doc = {'hostname': k8s_name(display), 'users': [user], 'ssh_pwauth': False}
+    if ci.get('packages'): doc['packages'] = list(ci['packages'])
+    return '#cloud-config\n' + yaml.safe_dump(doc, sort_keys=True, default_flow_style=False)
+
+
 def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: list[dict], running: bool,
-        component: str, protected: bool, extra_labels: dict | None = None, annotations: dict | None = None) -> dict:
+        component: str, protected: bool, extra_labels: dict | None = None, annotations: dict | None = None,
+        cloud_init: dict | None = None) -> dict:
     name = k8s_name(display)
     nets = [{'name': f"nic{i}", 'multus': {'networkName': f"{ns}/{_nad(itf['network'])}", **({'default': True} if i == 0 else {})}}
             for i, itf in enumerate(interfaces)]
     labels = {**_labels(spec, component, protected), **(extra_labels or {})}
+    disks = [{'name': 'root', 'disk': {'bus': 'virtio'}}]
+    volumes = [{'name': 'root', 'dataVolume': {'name': f'{name}-root'}}]
+    if cloud_init:
+        disks.append({'name': 'cloudinit', 'disk': {'bus': 'virtio'}})
+        volumes.append({'name': 'cloudinit', 'cloudInitNoCloud': {'userData': cloud_config(display, cloud_init)}})
     return {
         'apiVersion': 'kubevirt.io/v1', 'kind': 'VirtualMachine',
         'metadata': {'name': name, 'namespace': ns, 'labels': labels,
@@ -138,10 +156,10 @@ def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: l
                 'spec': {
                     'architecture': catalog.ARCH,
                     'domain': {'cpu': {'cores': size['cpu']}, 'memory': {'guest': size['memory']},
-                               'devices': {'disks': [{'name': 'root', 'disk': {'bus': 'virtio'}}],
+                               'devices': {'disks': disks,
                                            'interfaces': [{'name': n['name'], 'bridge': {}} for n in nets]}},
                     'networks': nets,
-                    'volumes': [{'name': 'root', 'dataVolume': {'name': f'{name}-root'}}],
+                    'volumes': volumes,
                 }},
         },
     }
@@ -220,7 +238,7 @@ def render(spec: dict) -> list[dict]:
             tags = {f"xfoundry.io/tag-{k8s_name(t)}": 'true' for t in g.get('tags', [])}
             objects.append(_vm(spec, ns, display, g['image'], size, [{'network': n} for n in g['networks']],
                                powered(g['power'], i, g['count']), 'vm', False, {'xfoundry.io/group': k8s_name(g['pattern']), **tags},
-                               {'xfoundry.io/tags': ','.join(g.get('tags', []))} if g.get('tags') else None))
+                               {'xfoundry.io/tags': ','.join(g.get('tags', []))} if g.get('tags') else None, g.get('cloud_init')))
 
     for c in spec.get('clusters', []):
         values = {'sync': {'fromHost': {'nodes': {'enabled': False}}}}

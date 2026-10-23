@@ -278,3 +278,37 @@ def test_no_routes_when_no_router_joins(arm64):
     spec['appliances'] = [a for a in spec['appliances'] if a['name'] != 'rt01']
     lb = deployment(render(check(spec)), 'lb01')
     assert not [k for k in lb['spec']['template']['metadata']['annotations'] if k.endswith('/routes')]
+
+
+HASH = '$6$labsalt$' + 'a' * 86
+
+
+def test_cloud_init_adds_user_keys_password_hash_and_packages():
+    spec = raw()
+    spec['vms'][0]['cloud_init'] = {'user': 'elfaz', 'ssh_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample elfaz@mac'],
+                                    'password_hash': HASH, 'packages': ['nginx', 'qemu-guest-agent']}
+    vms = [o for o in render(check(spec)) if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm']
+    tpl = vms[0]['spec']['template']['spec']
+    assert [d['name'] for d in tpl['domain']['devices']['disks']] == ['root', 'cloudinit']
+    data = tpl['volumes'][1]['cloudInitNoCloud']['userData']
+    assert data.startswith('#cloud-config\n')
+    doc = yaml.safe_load(data)
+    assert doc['hostname'] == vms[0]['metadata']['name'] and doc['ssh_pwauth'] is False and doc['packages'] == ['nginx', 'qemu-guest-agent']
+    assert doc['users'][0]['name'] == 'elfaz' and doc['users'][0]['passwd'] == HASH and doc['users'][0]['lock_passwd'] is False
+    assert render(check(spec)) == render(check(spec)), 'deterministic: the same manifest at plan and apply'
+    # Without a hash the account is key-only; the appliance VM gets no cloud-init.
+    del spec['vms'][0]['cloud_init']['password_hash']
+    doc = yaml.safe_load(next(o for o in render(check(spec)) if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm')
+                         ['spec']['template']['spec']['volumes'][1]['cloudInitNoCloud']['userData'])
+    assert doc['users'][0]['lock_passwd'] is True and 'passwd' not in doc['users'][0]
+    fw = next(o for o in render(check(spec)) if o['metadata']['labels'].get('xfoundry.io/component') == 'firewall')
+    assert len(fw['spec']['template']['spec']['volumes']) == 1
+
+
+@pytest.mark.parametrize('ci', [{'user': 'Root!'}, {'user': 'a', 'password_hash': 'plaintext'}, {'user': 'a', 'ssh_keys': ['not a key']},
+                                {'ssh_keys': []}, {'user': 'a', 'packages': ['rm -rf /']}])
+def test_cloud_init_refuses_plain_passwords_and_odd_values(ci):
+    spec = raw()
+    spec['vms'][0]['cloud_init'] = ci
+    with pytest.raises(SpecError):
+        check(spec)

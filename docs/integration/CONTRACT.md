@@ -49,7 +49,8 @@ A person queues a job in xStage (`create`, `prune`, `destroy` or `check`). The w
 - **Cancel** is a person's action. A queued job is cancelled at once; a claimed one gets `cancel_requested`, and xStage refuses the move to `applying` from then on. The worker stops before applying, never halfway.
 - **Progress** carries `message`, `level`, and optionally `state`, `plan_id` (a plan this owner has) and `error`.
 - **Status** (`state`, `message`, `namespace`, `applied`, `manifest_hash`, `members`, `checked_at`) is what the worker saw. A member that is not ready may carry `detail`: one line on why (its disk import, its pods' waiting reasons, the latest warning event). It is shown to the person and never used as change evidence: only the gate's fresh snapshot is.
-- xStage reads only the spec's `format` and `name`; xFoundry validates the whole spec (a `check` job does only that and reports status).
+- xStage reads the spec's `format` and `name` to file it, and its `lifecycle`, `networks`, `appliances`, `vms` and `clusters` to draw it, pause it and expire it; xFoundry validates the whole spec (a `check` job does only that and reports status).
+- **Lifecycle (xStage ADR 0020).** While an environment is paused, a claimed job's spec has every VM group's `power` set to `none`; the saved spec is unchanged, and the worker builds the spec it is given. xStage may queue a job on a person's behalf: the rebuild after a reset's destroy succeeded, and a destroy when the spec's `lifecycle.ttl` ran out. Each still becomes a plan a person approves.
 
 ## Rules neither side may break
 

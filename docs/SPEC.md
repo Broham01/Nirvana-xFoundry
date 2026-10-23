@@ -22,7 +22,10 @@ Nirvana's ADR 0012 step 3 (Kubernetes models) and xFoundry's environment definit
 | `networks[]` | subnets, optional VLAN, gateway, excluded ranges | Kube-OVN `Subnet` (+ `Vlan`), Multus `NetworkAttachmentDefinition` |
 | `appliances[]` | firewall, router, load balancer with fixed interface addresses | KubeVirt `VirtualMachine` (OPNsense, pfSense, VyOS) or `Deployment` (HAProxy, FRR, Traefik, NGINX) |
 | `vms[]` | groups of VMs by name pattern, count, image, size, power, tags | one KubeVirt `VirtualMachine` per name |
+| `vms[].cloud_init` | first boot of cloud images: one sudo user, SSH public keys, an optional SHA-512 crypt `password_hash` (never a plain password) for the console, packages | a `cloudInitNoCloud` disk with user data, the same at plan and apply |
 | `clusters[]` | nested Kubernetes | Argo CD `Application` installing a vcluster (Cluster API on KubeVirt: later) |
+
+The `lifecycle.ttl` reaper is xStage (ADR 0020 there): when it runs out, xStage queues a destroy job, which a person approves like any other.
 
 Appliance configuration (`config.source: netbox`) is pushed by Ansible after the VM boots, from the NetBox device named in `config.ref`. It is not part of the rendered manifest, so it gets its own plan later (Ansible check mode, ADR 0002).
 
