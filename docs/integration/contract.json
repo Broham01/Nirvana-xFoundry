@@ -1,7 +1,7 @@
 {
   "contract": "nirvana-xfoundry",
   "version": 2,
-  "updated": "2026-10-21",
+  "updated": "2026-10-23",
   "note": "Mirrored byte for byte in Broham01/Nirvana-xStage and Broham01/Nirvana-xFoundry at docs/integration/contract.json. Both repos test themselves against it; Nirvana's CI also checks that the two copies are identical.",
   "nirvana_api": {
     "auth": {"scheme": "bearer", "token_prefix": "nvt_", "scopes": ["snapshots:read", "snapshots:write", "plans:read", "plans:write", "jobs:read", "jobs:write", "environments:status"]},
@@ -35,7 +35,7 @@
     "status_fields": ["state", "message", "namespace", "applied", "manifest_hash", "members", "checked_at"],
     "member_fields": ["name", "kind", "role", "product", "phase", "ready", "addresses", "detail"],
     "environment_states": ["unknown", "absent", "pending", "ready", "degraded"],
-    "rules": ["A claimed job comes back to the same token until it finishes, so a restarted worker resumes it.", "Moving to applying is refused once a person asked to cancel; the worker must stop before applying.", "Status is shown to the person and never used as change evidence; only the gate's fresh snapshot is."]
+    "rules": ["A claimed job comes back to the same token until it finishes, so a restarted worker resumes it.", "Moving to applying is refused once a person asked to cancel; the worker must stop before applying.", "Status is shown to the person and never used as change evidence; only the gate's fresh snapshot is.", "While an environment is paused (xStage ADR 0020), a claimed job's spec has every VM group's power set to none; the environment's saved spec is unchanged. The worker builds the spec it is given, as always.", "xStage may queue a job on a person's behalf: the rebuild after a reset's destroy succeeds, and a destroy when an environment's lifecycle.ttl runs out. Each still becomes a plan a person approves."]
   },
   "snapshot_format": {
     "format": "nirvana.snapshot/1",
