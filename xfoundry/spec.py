@@ -128,6 +128,25 @@ def check(data: dict) -> dict:
             problems.append(f"Appliance {a['name']}: {a['product']} has no {catalog.ARCH} build, so it cannot run on this platform "
                             f"(XFOUNDRY_ARCH={catalog.ARCH}). Use it on an amd64 cluster.")
 
+    # Fixed VM addresses (ADR 0009): the group's first VM takes the given address, each next VM the one after. They
+    # are reserved below like appliance addresses, so DHCP never hands them to another VM.
+    for g in spec.get('vms', []):
+        for net_name, start in (g.get('addresses') or {}).items():
+            if net_name not in g['networks']:
+                problems.append(f"VM group {g['pattern']} has a fixed address for {net_name}, which it does not use."); continue
+            net = nets.get(net_name)
+            if net is None: continue
+            try: first = ipaddress.IPv4Address(start)
+            except ValueError: problems.append(f"VM group {g['pattern']}: cannot read address {start!r}."); continue
+            addrs = [first + i for i in range(g['count'])] if int(first) + g['count'] - 1 <= 0xFFFFFFFF else []
+            if not addrs or any(a not in net or a in (net.network_address, net.broadcast_address) for a in addrs):
+                problems.append(f"VM group {g['pattern']}: {g['count']} addresses from {first} do not fit in {net}."); continue
+            taken = set(next(n for n in spec['networks'] if n['name'] == net_name)['_reserved'])
+            clash = [a for a in addrs if str(a) in taken or a in used[net_name]]
+            if clash: problems.append(f"VM group {g['pattern']}: {clash[0]} on {net_name} is the gateway, excluded, or already used."); continue
+            used[net_name].update(addrs)
+            g.setdefault('_addresses', {})[net_name] = [str(a) for a in addrs]
+
     # Appliance addresses are reserved so dynamic VMs never take them (Kube-OVN still assigns a static address inside
     # excludeIps). An appliance holding a network's gateway address is that network's router: OVN's own logical router
     # then moves to another address, and DHCP hands out the appliance as the default route.
@@ -139,7 +158,7 @@ def check(data: dict) -> dict:
             for itf in a['interfaces']:
                 if itf['network'] == n['name'] and itf.get('address'): claimed[itf['address']] = a['name']
         n['_router'] = claimed.get(n['gateway'])
-        reserved = set(n['_reserved']) | set(claimed)
+        reserved = set(n['_reserved']) | set(claimed) | {a for g in spec.get('vms', []) for a in g.get('_addresses', {}).get(n['name'], [])}
         if n['_router']:
             free = [h for h in reversed(list(net.hosts())) if str(h) not in reserved]
             if not free: problems.append(f"Network {n['name']} has no free address left for OVN's gateway."); continue

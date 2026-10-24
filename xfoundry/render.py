@@ -140,6 +140,12 @@ def cloud_config(display: str, ci: dict) -> str:
     return '#cloud-config\n' + yaml.safe_dump(doc, sort_keys=True, default_flow_style=False)
 
 
+def stable_mac(env: str, display: str, network: str) -> str:
+    """A locally administered MAC from the environment, VM and network names (ADR 0009): the same on every rebuild."""
+    b = hashlib.sha256(f'{env}/{display}/{network}'.encode()).digest()[:5]
+    return '02:' + ':'.join(f'{x:02x}' for x in b)
+
+
 def _vm_dns(spec: dict, interfaces: list[dict]) -> dict:
     """The VM's first interface is its primary network, and KubeVirt's own DHCP server answers on it with the DNS of
     the virt-launcher pod: the cluster's DNS, which an environment cannot (and must not) reach. On an internet network
@@ -178,7 +184,8 @@ def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: l
                     'architecture': catalog.ARCH,
                     'domain': {'cpu': {'cores': size['cpu']}, 'memory': {'guest': size['memory']},
                                'devices': {'disks': disks,
-                                           'interfaces': [{'name': n['name'], 'bridge': {}} for n in nets]}},
+                                           'interfaces': [{'name': n['name'], 'bridge': {}, **({'macAddress': itf['mac']} if itf.get('mac') else {})}
+                                                          for n, itf in zip(nets, interfaces)]}},
                     'networks': nets,
                     'volumes': volumes,
                     **_vm_dns(spec, interfaces),
@@ -299,7 +306,9 @@ def render(spec: dict) -> list[dict]:
         group_names = names(g['pattern'], g['count'])
         for i, display in enumerate(group_names):
             tags = {f"xfoundry.io/tag-{k8s_name(t)}": 'true' for t in g.get('tags', [])}
-            objects.append(_vm(spec, ns, display, g['image'], size, [{'network': n} for n in g['networks']],
+            itfs = [{'network': n, **({'address': g['_addresses'][n][i]} if n in g.get('_addresses', {}) else {}),
+                     **({'mac': stable_mac(spec['name'], display, n)} if g.get('stable_mac') else {})} for n in g['networks']]
+            objects.append(_vm(spec, ns, display, g['image'], size, itfs,
                                powered(g['power'], i, g['count']), 'vm', False, {'xfoundry.io/group': k8s_name(g['pattern']), **tags},
                                {'xfoundry.io/tags': ','.join(g.get('tags', []))} if g.get('tags') else None, g.get('cloud_init')))
 

@@ -39,3 +39,12 @@ def test_log_page_shows_text_only():
     page = (ROOT / 'platform/dev/logs.html').read_text()
     assert 'innerHTML' not in page and 'insertAdjacentHTML' not in page
     assert 'createTextNode' in page
+
+
+def test_console_page_uses_local_novnc_and_shows_text_only():
+    """xStage ADR 0022: the paste and Ctrl+Alt+Del page loads noVNC from the same folder, nothing from the internet."""
+    page = (ROOT / 'platform/dev/nirvana-console.html').read_text()
+    assert "import RFB from './core/rfb.js'" in page
+    assert 'http://' not in page.replace('xmlns', '') and 'https://' not in page
+    assert 'innerHTML' not in page and 'sendCtrlAltDel' in page
+    assert 'nirvana-console.html' in (ROOT / 'platform/dev/console.sh').read_text()

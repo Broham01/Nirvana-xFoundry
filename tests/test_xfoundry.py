@@ -372,3 +372,39 @@ def test_vms_on_internet_networks_get_the_egress_dns_server():
     assert tpl['dnsPolicy'] == 'None' and tpl['dnsConfig'] == {'nameservers': ['1.1.1.1']}
     plain = next(o for o in render(check(raw())) if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm')
     assert 'dnsPolicy' not in plain['spec']['template']['spec']
+
+
+def _app_vms(objects):
+    return [o for o in objects if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm']
+
+
+def test_fixed_addresses_and_stable_macs():
+    """ADR 0009: the group's first VM takes the given address, the next VM the one after; both are kept out of DHCP.
+    stable_mac gives each card the same MAC on every rebuild."""
+    spec = raw()
+    spec['vms'][0].update(addresses={'app': '10.60.20.50'}, stable_mac=True)
+    objects = render(check(spec))
+    vms = _app_vms(objects)
+    keys = [k for k in vms[0]['spec']['template']['metadata']['annotations'] if k.endswith('ovn.kubernetes.io/ip_address')]
+    assert [vm['spec']['template']['metadata']['annotations'][keys[0]] for vm in vms] == ['10.60.20.50', '10.60.20.51']
+    subnet = next(o for o in objects if o['kind'] == 'Subnet' and o['metadata']['name'].endswith('app'))
+    assert {'10.60.20.50', '10.60.20.51'} <= set(subnet['spec']['excludeIps'])
+    macs = [vm['spec']['template']['spec']['domain']['devices']['interfaces'][0]['macAddress'] for vm in vms]
+    assert len(set(macs)) == 2 and all(m.startswith('02:') for m in macs)
+    assert macs == [vm['spec']['template']['spec']['domain']['devices']['interfaces'][0]['macAddress'] for vm in _app_vms(render(check(spec)))]
+    # Without the options nothing changes for existing environments.
+    plain = _app_vms(render(check(raw())))
+    assert 'macAddress' not in plain[0]['spec']['template']['spec']['domain']['devices']['interfaces'][0]
+
+
+@pytest.mark.parametrize('addresses, expected', [
+    ({'app': '10.60.20.255'}, 'do not fit'),          # the second VM would be past the network
+    ({'app': '10.60.20.1'}, 'the gateway'),            # gateway
+    ({'app': '10.60.20.9'}, 'excluded'),               # inside exclude
+    ({'dmz': '10.60.10.50'}, 'does not use'),
+])
+def test_fixed_addresses_refused(addresses, expected):
+    spec = raw()
+    spec['vms'][0]['addresses'] = addresses
+    with pytest.raises(SpecError) as e: check(spec)
+    assert expected in ' '.join(e.value.problems)
