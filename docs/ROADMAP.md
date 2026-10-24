@@ -2,6 +2,19 @@
 
 Order of work. Each step ends with something that works end to end.
 
+## Where it stands (v1.1, 2026-10-24)
+
+Done and live on the Mac:
+- the spec, renderer and gate;
+- the worker driven from xStage;
+- the dev platform;
+- consoles and logs, internet access and VM power;
+- fixed addresses and stable MACs.
+
+The order of further work is set in xStage's feature plan (Proxmox VE and vSphere comparison). Round 2 is next: ISO and disk upload, VM import, UEFI/Secure Boot/TPM and boot order, customization profiles. It needs an `import` job here.
+
+The history below is kept as it was written.
+
 ## Done (2026-10-20)
 
 - Shared spec `xfoundry.environment/1`, validator, renderer, Nirvana model projections, apply gate, CLI, tests.

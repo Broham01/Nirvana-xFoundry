@@ -1,73 +1,73 @@
 # Nirvana xFoundry
 
-xFoundry builds, scales and destroys environments on Kubernetes: firewalls, routers, load balancers, VMs, networks and nested clusters. It changes nothing until a person has approved the exact change in [Nirvana xStage](https://github.com/Broham01/Nirvana-xStage), the planner (called Nirvana until 2026-10-21; below, "Nirvana" means xStage).
+xFoundry builds, scales and destroys environments on Kubernetes: VMs (KubeVirt), networks (Kube-OVN, Multus), routers, firewalls, load balancers and nested clusters (vcluster). It changes nothing until a person has approved the exact change in **[Nirvana xStage](https://github.com/Broham01/Nirvana-xStage)**, the planner and console.
 
-**Nirvana plans. xFoundry builds.** Nirvana never connects to infrastructure and never executes. xFoundry is the half that does, and it only applies a plan Nirvana approved, against a cluster that has not drifted since the plan was made.
+**Version 1.1** (2026-10-24), working with xStage 1.0 over contract version 3.
+
+**xStage plans. xFoundry builds.** xStage never connects to infrastructure. xFoundry holds the cluster credentials, and it applies only a plan xStage approved, against a cluster that has not drifted since the plan was made.
 
 ```
-spec (xfoundry.environment/1)
-  └─ xfoundry render ──► manifest ──► Nirvana plan ──► person approves
-                                                         │
-             fresh snapshot ──► xfoundry gate ◄──────────┘
-                                   │ approved · same bytes · same snapshot · no drift
-                                   ▼
-                              kubectl apply
+you ask in xStage ──► worker renders the spec ──► plan in xStage ──► a person approves
+                                                                         │
+                     fresh snapshot ──► gate: approved · same bytes · same snapshot · no drift
+                                                                         ▼
+                                                                   kubectl apply
 ```
 
-## Status (2026-10-21)
+## Use it
 
-**New: one console.** Environments are built, scaled and destroyed from Nirvana xStage's Environments page. `xfoundry worker` (xStage starts it for you; xStage ADR 0015) claims the jobs you queue there, plans them, waits for your approval in xStage, and applies through the gate ([ADR 0004](docs/adr/0004-worker.md)).
+You use xFoundry through xStage: its Environments pages, the catalog, Jobs and the consoles. xStage runs the worker for you. Setup and everyday use are in the **[Nirvana guide](https://github.com/Broham01/Nirvana-xStage/blob/main/docs/GUIDE.md)**; in short:
 
-Built:
-- the shared spec and its validator;
-- the renderer (Kube-OVN, Multus, KubeVirt, Deployments, vcluster);
-- Nirvana model projections;
-- the Nirvana client;
-- the apply gate and the CLI.
+1. Clone this repo to `~/Nirvana-xFoundry` (xStage looks for it there).
+2. Run `platform/dev/setup-mac.sh` once. It brings up the dev platform: kind on Colima with Kube-OVN, Multus, KubeVirt and CDI ([platform/dev](platform/dev/README.md)).
+3. Create a service token in xStage (**Settings › Account and tokens**), then double-click **`Set xFoundry token.command`** and paste it. It is stored in the Keychain.
+4. Restart xStage. The worker starts and picks up the jobs you queue.
 
-55 tests pass; CI also runs shellcheck on the platform scripts. The rendered output was checked against Nirvana's real Kubernetes planner.
+## What it builds
 
-The full loop ran live against Nirvana with its new service tokens ([Nirvana PR #1](https://github.com/Broham01/Nirvana-xStage/pull/1)): plan, approval by a person in Nirvana, and the gate refusing drift, models and edited specs.
+| Piece | How |
+| --- | --- |
+| **Networks** | A Kube-OVN VPC per environment, subnets with DHCP, optional VLAN underlay. Traffic between networks goes through the environment's router or firewall. |
+| **Internet access** | Optional, outbound only, through an egress gateway pod; private ranges are blocked ([ADR 0007](docs/adr/0007-internet-access.md)). |
+| **VMs** | KubeVirt VMs from cloud images with cloud-init (user, SSH keys, password hash, packages), fixed addresses and stable MACs ([ADR 0009](docs/adr/0009-fixed-addresses-and-stable-macs.md)). |
+| **Appliances** | FRR, HAProxy, Traefik, nginx as containers; VyOS, OPNsense, pfSense as VMs (x86 platforms only). |
+| **Clusters** | vcluster inside the environment. |
+| **Power** | Start, stop and restart VMs without a plan; the only change made outside the gate ([ADR 0008](docs/adr/0008-power-without-a-plan.md)). |
+| **Consoles and logs** | noVNC with paste-as-typing and Ctrl+Alt+Del, and read-only appliance logs, through a view-only proxy ([ADR 0005](docs/adr/0005-vm-consoles.md), [ADR 0006](docs/adr/0006-pod-logs.md)). |
 
-**Dev platform:** [platform/dev](platform/dev/README.md) brings up the same stack on a Mac (kind on Colima). It has run on the Mac: platform up, dev-lab planned and approved. What is left for v1 is using it: `verify.sh` (VMs boot and route through rt01), a re-plan showing no changes, then scale down and destroy. `examples/dev-lab.yaml` is the environment to try first, and `xfoundry run` does the whole loop in one command.
+An environment is one YAML spec, `xfoundry.environment/1` ([SPEC](docs/SPEC.md), [schema](contracts/environment.schema.json), [example](examples/edge-lab.yaml)).
 
-Each environment gets its own Kube-OVN VPC: isolated from the cluster and other environments, with traffic between its networks routed through its router or firewall.
+## Command line
 
-Not built yet:
-- the cloud platform cluster;
-- the operator;
-- the image factory;
-- Cluster API.
-
-## Try it
+The CLI is for development and for running the loop without the console:
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/xfoundry validate examples/edge-lab.yaml
-.venv/bin/xfoundry render examples/edge-lab.yaml
-.venv/bin/xfoundry model examples/edge-lab.yaml --stage built -o edge-lab.model.json   # upload in Nirvana > Environment
+.venv/bin/xfoundry render   examples/edge-lab.yaml
 .venv/bin/pytest -q
 ```
 
-With Nirvana running, create a token in Nirvana under Account › Service tokens, then set `NIRVANA_URL=http://localhost:8000` and `NIRVANA_TOKEN`:
+With xStage running, set `NIRVANA_URL=http://localhost:8000` and `NIRVANA_TOKEN`, then `xfoundry plan`, `status`, `apply` and `run`. Use `--action prune` to remove scaled-down VMs and `--action destroy` to remove the environment. `xfoundry worker` is what xStage runs for you.
 
-```sh
-xfoundry plan  examples/edge-lab.yaml --model                 # review only: a modelled plan can never pass the gate
-xfoundry plan  examples/edge-lab.yaml --snapshot cluster.json # cluster.json from Nirvana's collect-k8s-snapshot.py
-xfoundry status examples/edge-lab.yaml
-xfoundry apply  examples/edge-lab.yaml --snapshot fresh.json --dry-run
-```
+## Rules it keeps
 
-Scale a VM group down by editing `count`, then `plan --action prune` / `apply --action prune` removes the extra VMs. `--action destroy` removes the environment.
+- **Never apply without the gate:** an approved plan, the same manifest hash, the same snapshot, no drift, a matching action, no models. Any failure means re-plan, never "apply anyway". Power is the one documented exception.
+- **Never approve.** xFoundry has no code path that approves in xStage.
+- **Tokens stay in the Keychain.** Snapshots of real clusters are never committed.
 
 ## Documents
 
-- [docs/integration](docs/integration/CONTRACT.md): the contract with Nirvana (mirrored in both repos) and the log of changes across it. Read before touching the Nirvana client, the gate, models or the spec.
-- [docs/SPEC.md](docs/SPEC.md): the shared spec.
-- [docs/ROADMAP.md](docs/ROADMAP.md): phases and order of work.
-- [ADR 0001](docs/adr/0001-foundation.md): platform and tool choices.
-- [ADR 0002](docs/adr/0002-nirvana-integration.md): the plan → approve → gate → apply loop, and the Nirvana changes it needs.
-- [ADR 0003](docs/adr/0003-local-dev-platform.md): local dev platform first; architectures; routers and gateways on Kube-OVN.
-- [ADR 0006](docs/adr/0006-pod-logs.md): read-only pod logs in the browser, through the same view-only proxy.
-- [ADR 0005](docs/adr/0005-vm-consoles.md): VM consoles in the browser through a view-only proxy.
-- [ADR 0004](docs/adr/0004-worker.md): the worker: xStage's console drives xFoundry; a job never applies without an approved plan and the gate.
+- [docs/integration](docs/integration/CONTRACT.md): the contract with xStage (mirrored in both repos) and the log of changes across it. Read it before touching the client, the gate, the worker, models or the spec.
+- [docs/SPEC.md](docs/SPEC.md): the spec. [docs/ROADMAP.md](docs/ROADMAP.md): what is done and what is next.
+- [docs/adr](docs/adr): decisions.
+  - 0001: foundation.
+  - 0002: integration with xStage.
+  - 0003: dev platform.
+  - 0004: worker.
+  - 0005: consoles.
+  - 0006: logs.
+  - 0007: internet.
+  - 0008: power.
+  - 0009: fixed addresses.
+- [platform/dev](platform/dev/README.md): the dev platform, its exit test and troubleshooting.
