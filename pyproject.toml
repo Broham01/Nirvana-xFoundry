@@ -1,6 +1,6 @@
 [project]
 name = "nirvana-xfoundry"
-version = "0.1.0"
+version = "1.1.0"
 description = "Nirvana xFoundry: build, scale and destroy Kubernetes environments; apply only Nirvana-approved plans."
 requires-python = ">=3.12"
 dependencies = ["PyYAML>=6.0", "jsonschema>=4.21"]
