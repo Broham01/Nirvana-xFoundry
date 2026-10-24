@@ -30,5 +30,6 @@ Both need an external network attachment (usually macvlan on a node NIC with add
 ## Consequences
 
 - Turning internet access on or off is an ordinary spec change: a plan shows the new Deployment and the VPC routing change ("VPC routing change" in xStage's planner), and a person approves it.
-- VMs that are already running get the new route at once; they pick up the DNS server when they renew their DHCP lease (within an hour) or restart.
+- **DNS (fixed 2026-10-24 after the first run on the Mac):** a VM's primary interface is answered by KubeVirt's own DHCP server, which hands out the virt-launcher pod's DNS, the cluster's, and that is unreachable from an environment. VMs on internet networks therefore get `dnsPolicy: None` with the egress DNS server in `dnsConfig`. The DHCP option stays for anything else on the network.
+- VMs that are already running get the new route at once. The DNS server reaches them when their VM instance is recreated: power the VM off from inside (`sudo poweroff`, after which KubeVirt starts it again), or Pause and Resume it in xStage. A reboot from inside keeps the old instance.
 - `XFOUNDRY_EGRESS_*` must be the same at plan and apply, like `XFOUNDRY_ARCH`, or the manifest hash differs and the gate refuses.

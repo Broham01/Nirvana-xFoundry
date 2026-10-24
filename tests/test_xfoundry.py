@@ -363,3 +363,12 @@ def test_internet_refused_on_vlan_networks_and_name_clash():
     spec['vms'][0]['pattern'] = 'egress'; spec['vms'][0]['count'] = 1
     with pytest.raises(SpecError, match='clashes'):
         check(spec)
+
+
+def test_vms_on_internet_networks_get_the_egress_dns_server():
+    objects = render(check(internet_spec()))
+    vm = next(o for o in objects if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm')
+    tpl = vm['spec']['template']['spec']
+    assert tpl['dnsPolicy'] == 'None' and tpl['dnsConfig'] == {'nameservers': ['1.1.1.1']}
+    plain = next(o for o in render(check(raw())) if o['kind'] == 'VirtualMachine' and o['metadata']['labels'].get('xfoundry.io/component') == 'vm')
+    assert 'dnsPolicy' not in plain['spec']['template']['spec']
