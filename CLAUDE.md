@@ -22,7 +22,7 @@ When a change touches the boundary:
 
 ## Rules that never change
 
-- **Never apply without the gate.** Every `kubectl apply` or `delete` goes through `gate.check`: approved plan, same manifest hash, same snapshot, no drift, matching action, no models. Any failure means re-plan, never "apply anyway".
+- **Never apply without the gate.** Every `kubectl apply` or `delete` goes through `gate.check`: approved plan, same manifest hash, same snapshot, no drift, matching action, no models. Any failure means re-plan, never "apply anyway". The one exception is power (ADR 0008): setting `runStrategy` on, or deleting the running instance (VMI) of, a VM the job's spec renders, for a `power` job a person queued.
 - **Never approve.** xFoundry has no code path that approves or requests changes in Nirvana, and must not gain one.
 - **Never ask Elfaz to paste a token into chat.** `NIRVANA_TOKEN` is set locally; tokens are created on Nirvana's Account page.
 - Snapshots of real clusters are sensitive and are never committed.
