@@ -20,6 +20,7 @@ Nirvana's ADR 0012 step 3 (Kubernetes models) and xFoundry's environment definit
 | `rules.production` | treat as production | namespace label `environment=production` (Nirvana's planner reads this) |
 | `rules.protect_appliances` | appliances need care | `nirvana.io/protected=true` (Nirvana shows Criticality/Critical) |
 | `networks[]` | subnets, optional VLAN, gateway, excluded ranges | Kube-OVN `Subnet` (+ `Vlan`), Multus `NetworkAttachmentDefinition` |
+| `networks[].internet` | outbound internet for this network (ADR 0007) | an `egress` Deployment that masquerades out of the cluster network, VPC policy routes to it, a DNS server by DHCP |
 | `appliances[]` | firewall, router, load balancer with fixed interface addresses | KubeVirt `VirtualMachine` (OPNsense, pfSense, VyOS) or `Deployment` (HAProxy, FRR, Traefik, NGINX) |
 | `vms[]` | groups of VMs by name pattern, count, image, size, power, tags | one KubeVirt `VirtualMachine` per name |
 | `vms[].cloud_init` | first boot of cloud images: one sudo user, SSH public keys, an optional SHA-512 crypt `password_hash` (never a plain password) for the console, packages | a `cloudInitNoCloud` disk with user data, the same at plan and apply |

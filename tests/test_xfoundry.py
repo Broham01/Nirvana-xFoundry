@@ -312,3 +312,54 @@ def test_cloud_init_refuses_plain_passwords_and_odd_values(ci):
     spec['vms'][0]['cloud_init'] = ci
     with pytest.raises(SpecError):
         check(spec)
+
+
+def internet_spec():
+    spec = raw()
+    for n in spec['networks']:
+        if n['name'] in ('dmz', 'app'): n['internet'] = True
+    return spec
+
+
+def test_internet_access_adds_an_outbound_gateway_and_routes():
+    env = check(internet_spec())
+    e = env['_egress']
+    app = next(n for n in env['networks'] if n['name'] == 'app')
+    assert e['network'] == 'dmz' and e['address'] in next(n for n in env['networks'] if n['name'] == 'dmz')['_reserved']
+    objects = render(env)
+    vpc = next(o for o in objects if o['kind'] == 'Vpc')
+    internet = [r for r in vpc['spec']['policyRoutes'] if r['priority'] == 29000]
+    assert {r['match'] for r in internet} == {'ip4.src == 10.60.10.0/24', 'ip4.src == 10.60.20.0/24'}
+    assert all(r['action'] == 'reroute' and r['nextHopIP'] == e['address'] for r in internet)
+    # Traffic between the environment's own networks keeps its higher-priority rules.
+    assert min(r['priority'] for r in vpc['spec']['policyRoutes'] if r['priority'] != 29000) > 29000
+    subnets = {o['metadata']['name']: o['spec'] for o in objects if o['kind'] == 'Subnet'}
+    assert 'dns_server=1.1.1.1' in subnets['xf-edge-lab-app']['dhcpV4Options']
+    assert 'router=' not in subnets['xf-edge-lab-app']['dhcpV4Options'], 'VMs use the VPC router, which knows the way out'
+    assert 'dhcpV4Options' not in subnets['xf-edge-lab-wan'] or 'dns_server' not in subnets['xf-edge-lab-wan']['dhcpV4Options']
+    gw = next(o for o in objects if o['kind'] == 'Deployment' and o['metadata']['name'] == 'egress')
+    pod = gw['spec']['template']
+    assert pod['metadata']['annotations']['net-dmz.xf-edge-lab.ovn.kubernetes.io/ip_address'] == e['address']
+    assert json.loads(pod['metadata']['annotations']['net-dmz.xf-edge-lab.ovn.kubernetes.io/routes']) == [{'dst': app['cidr'], 'gw': e['gateway']}]
+    script = pod['spec']['containers'][0]['command'][2]
+    assert 'MASQUERADE' in script and '-i eth0 -j DROP' in script and '-d 192.168.0.0/16 -j DROP' in script
+    assert script.index('ESTABLISHED,RELATED') < script.index('-i eth0 -j DROP'), 'replies are let in before the rest is dropped'
+    assert render(env) == render(check(internet_spec())), 'deterministic'
+
+
+def test_without_internet_nothing_changes():
+    objects = render(check(raw()))
+    assert not any(o['kind'] == 'Deployment' and o['metadata']['name'] == 'egress' for o in objects)
+    vpc = next(o for o in objects if o['kind'] == 'Vpc')
+    assert all(r['priority'] != 29000 for r in vpc['spec'].get('policyRoutes', []))
+
+
+def test_internet_refused_on_vlan_networks_and_name_clash():
+    spec = raw()
+    spec['networks'][0].update(internet=True, vlan=100)
+    with pytest.raises(SpecError, match='VLAN network'):
+        check(spec)
+    spec = internet_spec()
+    spec['vms'][0]['pattern'] = 'egress'; spec['vms'][0]['count'] = 1
+    with pytest.raises(SpecError, match='clashes'):
+        check(spec)

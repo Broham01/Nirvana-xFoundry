@@ -64,7 +64,7 @@ def _ip_annotations(ns: str, interfaces: list[dict]) -> dict:
     return {f"{_nad(i['network'])}.{ns}.ovn.kubernetes.io/ip_address": i['address'] for i in interfaces if i.get('address')}
 
 
-POLICY_PRIORITY = {'reroute': 31000, 'drop': 30000}
+POLICY_PRIORITY = {'reroute': 31000, 'drop': 30000, 'internet': 29000}
 
 
 def _vpc(spec: dict, ns: str) -> dict:
@@ -88,6 +88,12 @@ def _vpc(spec: dict, ns: str) -> dict:
             if src != dst and (src, dst) not in joined:
                 routes.append({'priority': POLICY_PRIORITY['drop'], 'action': 'drop',
                                'match': f"ip4.src == {cidr[src]} && ip4.dst == {cidr[dst]}"})
+    # Networks with internet access send everything else (not another network of the environment) to the egress
+    # gateway; the rules above win for traffic between the environment's own networks.
+    if spec.get('_egress'):
+        for c in spec['_egress']['cidrs']:
+            routes.append({'priority': POLICY_PRIORITY['internet'], 'action': 'reroute', 'nextHopIP': spec['_egress']['address'],
+                           'match': f"ip4.src == {c}"})
     spec_body = {'policyRoutes': routes} if routes else {}
     return {'apiVersion': 'kubeovn.io/v1', 'kind': 'Vpc', 'metadata': {'name': ns, 'labels': _labels(spec, 'network')}, 'spec': spec_body}
 
@@ -102,9 +108,15 @@ def _networks(spec: dict, ns: str) -> list[dict]:
                         'spec': {'id': n['vlan'], 'provider': catalog.UNDERLAY}})
         subnet = {'protocol': 'IPv4', 'provider': provider, 'vpc': ns, 'cidrBlock': n['cidr'], 'gateway': n['_ovn_gateway'],
                   'excludeIps': n['_reserved'], 'enableDHCP': True}
-        if n['_router']:
+        options = []
+        if n['_router'] and not n.get('internet'):
             # The appliance is the default route; OVN's router keeps a separate address on this subnet.
-            subnet['dhcpV4Options'] = f"router={n['gateway']}"
+            options.append(f"router={n['gateway']}")
+        if n.get('internet'):
+            # VMs keep OVN's router as their default route (it sends internet traffic to the egress gateway, and traffic
+            # to other networks through the appliance that joins them), and need a DNS server.
+            options.append(f"dns_server={catalog.EGRESS_DNS}")
+        if options: subnet['dhcpV4Options'] = ','.join(options)
         if 'vlan' in n: subnet['vlan'] = f"{ns}-{n['name']}"
         # Kube-OVN Subnets are cluster-scoped, so the name carries the namespace.
         out.append({'apiVersion': 'kubeovn.io/v1', 'kind': 'Subnet',
@@ -207,6 +219,46 @@ def _pod_appliance(spec: dict, ns: str, a: dict, image: str, size: dict, protect
     return out
 
 
+def _egress(spec: dict, ns: str) -> dict:
+    """The internet gateway: a pod on the cluster network (which already reaches the internet through each node's
+    NAT) with one interface on an environment network. It masquerades what the VPC router sends it, outbound only:
+    nothing on the internet can open a connection into the environment."""
+    e = spec['_egress']
+    name = 'egress'
+    selector = {'xfoundry.io/environment': spec['name'], 'xfoundry.io/appliance': name}
+    annotations = {'k8s.v1.cni.cncf.io/networks': f"{ns}/{_nad(e['network'])}",
+                   f"{_nad(e['network'])}.{ns}.ovn.kubernetes.io/ip_address": e['address']}
+    if e['others']:
+        # Replies to the other internet networks go back through the VPC router, not out of the cluster network.
+        annotations[f"{_nad(e['network'])}.{ns}.ovn.kubernetes.io/routes"] = json.dumps(
+            [{'dst': c, 'gw': e['gateway']} for c in e['others']], separators=(',', ':'))
+    # Outbound only: from the cluster side, only replies come in. Private and cluster ranges are dropped, so the
+    # environment reaches the public internet and nothing else. Rules are flushed first, so a restart is clean.
+    rules = ['set -e', 'iptables -F FORWARD', 'iptables -t nat -F POSTROUTING',
+             'iptables -A FORWARD -i eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT', 'iptables -A FORWARD -i eth0 -j DROP',
+             *[f'iptables -A FORWARD -d {c} -j DROP' for c in catalog.EGRESS_BLOCK],
+             'iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE',
+             'echo "Internet gateway ready: outbound only, masquerading out of eth0."',
+             'trap "exit 0" TERM INT', 'while :; do sleep 3600 & wait $!; done']
+    script = '\n'.join(rules)
+    return {
+        'apiVersion': 'apps/v1', 'kind': 'Deployment',
+        'metadata': {'name': name, 'namespace': ns, 'labels': {**_labels(spec, 'egress'), 'xfoundry.io/product': 'egress'}},
+        'spec': {
+            'replicas': 1,
+            'strategy': {'type': 'Recreate'},   # a fixed address: two pods must never hold it at once
+            'selector': {'matchLabels': selector},
+            'template': {
+                'metadata': {'labels': {**MANAGED, **selector, 'xfoundry.io/role': 'egress'}, 'annotations': annotations},
+                'spec': {
+                    'securityContext': {'sysctls': [{'name': 'net.ipv4.ip_forward', 'value': '1'}]},
+                    'containers': [{'name': 'egress', 'image': catalog.image(catalog.EGRESS_IMAGE), 'command': ['sh', '-c', script],
+                                    'securityContext': {'capabilities': {'add': ['NET_ADMIN', 'NET_RAW']}},
+                                    'resources': {'requests': {'cpu': '50m', 'memory': '32Mi'}}}]}},
+        },
+    }
+
+
 def render(spec: dict) -> list[dict]:
     ns = namespace_of(spec)
     rules = spec['rules']
@@ -217,6 +269,7 @@ def render(spec: dict) -> list[dict]:
     if spec.get('owner'): ns_annotations['xfoundry.io/owner'] = spec['owner']
     objects: list[dict] = [{'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': ns, 'labels': ns_labels, 'annotations': ns_annotations}}]
     objects += _networks(spec, ns)
+    if spec.get('_egress'): objects.append(_egress(spec, ns))
 
     for a in spec.get('appliances', []):
         product = catalog.PRODUCTS[a['product']]

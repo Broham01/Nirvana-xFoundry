@@ -40,7 +40,8 @@
           "cidr": {"type": "string", "description": "IPv4 CIDR, e.g. 10.60.1.0/24."},
           "gateway": {"type": "string", "description": "Defaults to the first usable address. Usually the firewall or router interface on this network."},
           "vlan": {"type": "integer", "minimum": 1, "maximum": 4094, "description": "Underlay VLAN ID. Omit for an overlay-only network."},
-          "exclude": {"type": "array", "items": {"type": "string"}, "maxItems": 32, "description": "Addresses or ranges (a..b) the IPAM must not hand out."}
+          "exclude": {"type": "array", "items": {"type": "string"}, "maxItems": 32, "description": "Addresses or ranges (a..b) the IPAM must not hand out."},
+          "internet": {"type": "boolean", "default": false, "description": "VMs on this network can reach the internet through the environment's egress gateway (outbound only, NAT). Off: the network stays isolated."}
         }
       }
     },
