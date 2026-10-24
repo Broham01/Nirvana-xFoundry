@@ -44,7 +44,7 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 
 A person queues a job in xStage (`create`, `prune`, `destroy` or `check`). The worker claims it, plans it, waits for a person to approve the plan, then applies it through the gate.
 
-- **Claim** returns the job this token already holds and has not finished, else the oldest queued one, else `null`. Each claim is also the worker's check-in (`info`: version, platform, cluster), shown in the console.
+- **Claim** returns the job this token already holds and has not finished, else the oldest queued one, else `null`. Each claim is also the worker's check-in (`info`: version, platform, cluster, host, and `pid` and `code` so xStage can tell two workers on one token apart and an older copy from a current one), shown in the console. One worker runs per xFoundry folder.
 - **Job states:** `queued`, `running`, `waiting_approval`, `applying`, `succeeded`, `failed`, `cancelled`. The worker may move a job only as `worker_may_set` in `contract.json` allows. It never moves a job back to `queued`, and a final state is final.
 - **Cancel** is a person's action. A queued job is cancelled at once; a claimed one gets `cancel_requested`, and xStage refuses the move to `applying` from then on. The worker stops before applying, never halfway.
 - **Progress** carries `message`, `level`, and optionally `state`, `plan_id` (a plan this owner has) and `error`.
