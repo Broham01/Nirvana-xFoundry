@@ -140,6 +140,15 @@ def cloud_config(display: str, ci: dict) -> str:
     return '#cloud-config\n' + yaml.safe_dump(doc, sort_keys=True, default_flow_style=False)
 
 
+def _vm_dns(spec: dict, interfaces: list[dict]) -> dict:
+    """The VM's first interface is its primary network, and KubeVirt's own DHCP server answers on it with the DNS of
+    the virt-launcher pod: the cluster's DNS, which an environment cannot (and must not) reach. On an internet network
+    the VM gets the egress DNS server instead, through the pod's dnsConfig."""
+    first = interfaces[0]['network'] if interfaces else None
+    if not any(n['name'] == first and n.get('internet') for n in spec['networks']): return {}
+    return {'dnsPolicy': 'None', 'dnsConfig': {'nameservers': [catalog.EGRESS_DNS]}}
+
+
 def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: list[dict], running: bool,
         component: str, protected: bool, extra_labels: dict | None = None, annotations: dict | None = None,
         cloud_init: dict | None = None) -> dict:
@@ -172,6 +181,7 @@ def _vm(spec: dict, ns: str, display: str, image: str, size: dict, interfaces: l
                                            'interfaces': [{'name': n['name'], 'bridge': {}} for n in nets]}},
                     'networks': nets,
                     'volumes': volumes,
+                    **_vm_dns(spec, interfaces),
                 }},
         },
     }
