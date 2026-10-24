@@ -149,6 +149,24 @@ def check(data: dict) -> dict:
             n['_ovn_gateway'] = n['gateway']
         n['_reserved'] = sorted(reserved, key=lambda a: int(ipaddress.IPv4Address(a)))
 
+    # Internet access: one egress gateway per environment, attached to the first network that asks for it at that
+    # network's highest free address. Other internet networks reach it through the VPC router.
+    online = [n for n in spec['networks'] if n.get('internet') and n['name'] in nets]
+    spec['_egress'] = None
+    for n in online:
+        if 'vlan' in n: problems.append(f"Network {n['name']}: a VLAN network reaches the outside through its own underlay; internet: true is for overlay networks.")
+    online = [n for n in online if 'vlan' not in n]
+    if online:
+        claim('egress', 'The internet gateway')
+        first = online[0]
+        free = [h for h in reversed(list(nets[first['name']].hosts())) if str(h) not in set(first['_reserved'])]
+        if not free: problems.append(f"Network {first['name']} has no free address left for the internet gateway.")
+        else:
+            address = str(free[0])
+            first['_reserved'] = sorted({*first['_reserved'], address}, key=lambda a: int(ipaddress.IPv4Address(a)))
+            spec['_egress'] = {'network': first['name'], 'address': address, 'gateway': first['_ovn_gateway'],
+                               'cidrs': [n['cidr'] for n in online], 'others': [n['cidr'] for n in online[1:]]}
+
     total = 0
     for g in spec.get('vms', []):
         total += g['count']

@@ -51,4 +51,13 @@ frontend health
   stats uri /stats
 """
 
+# The egress gateway (networks with internet: true) is a small pod that NATs the environment's traffic out of the
+# cluster network. It needs iptables; Kube-OVN's own image has it and is already on every node. Like XFOUNDRY_ARCH,
+# keep it the same between plan and apply.
+EGRESS_IMAGE = os.environ.get('XFOUNDRY_EGRESS_IMAGE', 'docker.io/kubeovn/kube-ovn:v1.16.14')
+EGRESS_DNS = os.environ.get('XFOUNDRY_EGRESS_DNS', '1.1.1.1')   # handed to VMs on internet networks by DHCP
+# Internet means the public internet: the cluster, the platform's own networks and your home or office network stay
+# out of reach, so an environment is still isolated from everything but the outside world.
+EGRESS_BLOCK = os.environ.get('XFOUNDRY_EGRESS_BLOCK', '10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16').split()
+
 VCLUSTER_CHART = {'repo': 'https://charts.loft.sh', 'chart': 'vcluster', 'version': os.environ.get('XFOUNDRY_VCLUSTER_VERSION', '0.20.0')}
