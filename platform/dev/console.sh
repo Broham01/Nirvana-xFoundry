@@ -27,8 +27,9 @@ users: [{name: vm-console, user: {token: "$TOKEN"}}]
 contexts: [{name: vm-console, context: {cluster: xfoundry, user: vm-console}}]
 current-context: vm-console
 CONF
-# The log page is served next to noVNC (the proxy serves one folder).
+# The log page and the console page are served next to noVNC (the proxy serves one folder).
 cp "$(dirname "$0")/logs.html" "$WWW/logs.html"
+cp "$(dirname "$0")/nirvana-console.html" "$WWW/nirvana-console.html"   # paste as typing, Ctrl+Alt+Del (xStage ADR 0022)
 echo "VM consoles on http://localhost:$CONSOLE_PORT/console/ (view-only identity)."
 exec kubectl --kubeconfig "$CONF" proxy --address 127.0.0.1 --port "$CONSOLE_PORT" \
   --api-prefix=/k8s/ --www="$WWW" --www-prefix=/console/ \
