@@ -35,7 +35,7 @@ from .status import observe
 
 POLL = 3.0          # seconds between check-ins when idle
 WAIT_POLL = 5.0     # seconds between decision checks while a plan waits for approval
-VERSION = '0.5.0'
+VERSION = '1.1.0'
 
 
 POWER_OPS = {'start': 'Started', 'stop': 'Asked to power off', 'restart': 'Restarted', 'force-stop': 'Forced off',
