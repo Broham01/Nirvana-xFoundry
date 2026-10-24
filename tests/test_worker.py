@@ -198,3 +198,41 @@ def test_only_one_worker_per_folder(tmp_path):
     hold_lock(tmp_path / 'worker.lock').close()      # free again once the first one stops
     info = Worker(client=object()).info()
     assert info['pid'] == str(os.getpid()) and info['code'] == CODE and len(CODE) == 12
+
+
+def power_world(world, power, vms):
+    make, applied, env, snap = world
+    xs = FakeXStage(action='power')
+    xs.job['power'] = {'op': power, 'vms': vms}
+    ran = []
+    w = make(xs)
+    w.power = lambda cmd: (ran.append(cmd), (0, 'ok'))[1]
+    w.once()
+    return xs, ran, applied
+
+
+def test_power_restart_deletes_only_the_named_vm_instance_without_a_plan(world):
+    xs, ran, applied = power_world(world, 'restart', ['app-01'])
+    assert xs.job['state'] == 'succeeded' and xs.plans == {} and applied == [], 'no plan, no apply'
+    assert ran == [['kubectl', '-n', 'xf-dev-lab', 'delete', 'virtualmachineinstance', 'app-01', '--ignore-not-found', '--wait=false']]
+    assert any('Restarted: app-01' in m for _, _, m in xs.steps) and xs.statuses
+
+
+def test_power_stop_all_sets_halted_on_every_rendered_vm(world):
+    xs, ran, applied = power_world(world, 'stop', [])
+    names = [c[5] for c in ran]
+    assert xs.job['state'] == 'succeeded' and names and all(c[3:5] == ['patch', 'virtualmachine'] for c in ran)
+    assert all('"Halted"' in c[-1] for c in ran)
+    from xfoundry.render import render
+    _, _, env, _ = world
+    assert sorted(names) == sorted(o['metadata']['name'] for o in render(env) if o['kind'] == 'VirtualMachine')
+
+
+def test_power_force_stop_halts_then_kills(world):
+    xs, ran, applied = power_world(world, 'force-stop', ['app-02'])
+    assert [c[3] for c in ran] == ['patch', 'delete'] and '--grace-period=0' in ran[1] and '--force' in ran[1]
+
+
+def test_power_refuses_vms_the_environment_does_not_render(world):
+    xs, ran, applied = power_world(world, 'stop', ['app-01', 'kube-apiserver'])
+    assert xs.job['state'] == 'failed' and ran == [] and any('Not a VM of dev-lab: kube-apiserver' in m for _, _, m in xs.steps)

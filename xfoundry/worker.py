@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import signal
+import subprocess
 import time
 from pathlib import Path
 
@@ -28,13 +29,44 @@ import yaml
 from . import spec as spec_mod
 from .cli import LEDGER_DIR, Refused, apply_plan, collect, read_ledger, submit_plan
 from .nirvana import Nirvana, NirvanaError
-from .render import namespace_of
+from .render import namespace_of, render
 from .spec import SpecError
 from .status import observe
 
 POLL = 3.0          # seconds between check-ins when idle
 WAIT_POLL = 5.0     # seconds between decision checks while a plan waits for approval
-VERSION = '0.4.0'
+VERSION = '0.5.0'
+
+
+POWER_OPS = {'start': 'Started', 'stop': 'Asked to power off', 'restart': 'Restarted', 'force-stop': 'Forced off',
+             'force-restart': 'Forced to restart'}
+
+
+def power_commands(ns: str, op: str, names: list[str], context: str | None = None) -> list[list[str]]:
+    """The only kubectl calls power makes. Start and stop set runStrategy (stop shuts the guest down gracefully);
+    restart deletes the VM's instance, which KubeVirt starts again from the VM (picking up template changes)."""
+    base = ['kubectl', *(['--context', context] if context else []), '-n', ns]
+    run = lambda strategy, n: base + ['patch', 'virtualmachine', n, '--type', 'merge', '-p', json.dumps({'spec': {'runStrategy': strategy}})]
+    kill = lambda n, force: base + ['delete', 'virtualmachineinstance', n, '--ignore-not-found', '--wait=false',
+                                    *(['--grace-period=0', '--force'] if force else [])]
+    out = []
+    for n in names:
+        if op == 'start': out.append(run('Always', n))
+        elif op == 'stop': out.append(run('Halted', n))
+        elif op == 'restart': out.append(kill(n, False))
+        elif op == 'force-stop': out += [run('Halted', n), kill(n, True)]
+        elif op == 'force-restart': out.append(kill(n, True))
+    return out
+
+
+def run_kubectl(cmd: list[str]) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=120)
+    except FileNotFoundError:
+        return 127, 'kubectl is not installed here.'
+    except subprocess.TimeoutExpired:
+        return 124, 'kubectl timed out.'
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
 CODE = hashlib.sha256(spec_mod.SCHEMA_PATH.read_bytes()).hexdigest()[:12]   # which spec format this copy understands
@@ -62,11 +94,13 @@ class Stop(Exception):
 
 class Worker:
     def __init__(self, client: Nirvana | None = None, context: str | None = None, collector: str | None = None,
-                 collect_fn=collect, observe_fn=observe, apply_fn=apply_plan, submit_fn=submit_plan, sleep=time.sleep, log=print):
+                 collect_fn=collect, observe_fn=observe, apply_fn=apply_plan, submit_fn=submit_plan, sleep=time.sleep, log=print,
+                 power_fn=None):
         self.client = client or Nirvana()
         self.context, self.collector = context, collector
         self.collect, self.observe, self.apply, self.submit = collect_fn, observe_fn, apply_fn, submit_fn
         self.sleep, self.log = sleep, log
+        self.power = power_fn or run_kubectl
         self.stopping = False
 
     # ---- loop
@@ -135,6 +169,8 @@ class Worker:
             self.report(job, env)
             self.say(job, 'Checked.', state='succeeded')
             return
+        if job['action'] == 'power':
+            return self.power_step(job, env)
         rec = read_ledger(env)['plans'].get(job['action'])
         if job['state'] == 'applying':
             # Restarted mid-apply. If the plan is gone from the ledger, the apply finished; otherwise apply again
@@ -203,6 +239,24 @@ class Worker:
         lines = [l for l in output.splitlines() if l.strip()]
         self.say(job, f"Gate passed. {verb} {len(lines)} object{'s' if len(lines) != 1 else ''} with kubectl.", state='running')
         if job['action'] == 'destroy': self.wait_gone(job, env)
+        self.report(job, env)
+        self.say(job, 'Done.', state='succeeded')
+
+    def power_step(self, job: dict, env: dict):
+        """Start, stop or restart VMs (ADR 0008). No plan and no gate: power changes nothing in the spec. Only VMs this
+        environment renders, and only their runStrategy or their running instance; a later apply restores the spec's."""
+        p = job.get('power') or {}
+        op, wanted = p.get('op'), list(p.get('vms') or [])
+        if op not in POWER_OPS: self.fail(job, f'Unknown power operation {op!r}.')
+        rendered = [o['metadata']['name'] for o in render(env) if o['kind'] == 'VirtualMachine']
+        unknown = [n for n in wanted if n not in rendered]
+        if unknown: self.fail(job, f"Not a VM of {env['name']}: {', '.join(unknown)}. Nothing was changed.")
+        names = wanted or rendered
+        if not names: self.fail(job, f"{env['name']} has no VMs.")
+        for cmd in power_commands(namespace_of(env), op, names, self.context):
+            code, out = self.power(cmd)
+            if code: self.fail(job, f"kubectl failed (exit {code}): {out[-800:]}")
+        self.say(job, f"{POWER_OPS[op]}: {', '.join(names)}.")
         self.report(job, env)
         self.say(job, 'Done.', state='succeeded')
 

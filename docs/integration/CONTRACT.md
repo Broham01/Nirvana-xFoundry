@@ -42,7 +42,9 @@ Bearer service token (`nvt_…`), created by a person on Nirvana's Account page.
 
 ### Jobs (the console, version 2)
 
-A person queues a job in xStage (`create`, `prune`, `destroy` or `check`). The worker claims it, plans it, waits for a person to approve the plan, then applies it through the gate.
+A person queues a job in xStage (`create`, `prune`, `destroy`, `check` or `power`). For create, prune and destroy the worker claims it, plans it, waits for a person to approve the plan, then applies it through the gate.
+
+- **Power (version 3, xStage ADR 0021, xFoundry ADR 0008).** A `power` job carries `power: {op, vms}` with `op` one of `start`, `stop`, `restart`, `force-stop`, `force-restart` and `vms` the VMs' Kubernetes names (empty: every VM). Power changes nothing in the spec, so there is no plan and no gate. The worker acts only on VirtualMachines its render of the job's spec contains, and only by setting `runStrategy` (start, stop) or deleting their VirtualMachineInstance (restart; forced: grace period 0). It moves the job from `running` to `succeeded` or `failed`. A later apply sets every VM back to what the spec says.
 
 - **Claim** returns the job this token already holds and has not finished, else the oldest queued one, else `null`. Each claim is also the worker's check-in (`info`: version, platform, cluster, host, and `pid` and `code` so xStage can tell two workers on one token apart and an older copy from a current one), shown in the console. One worker runs per xFoundry folder.
 - **Job states:** `queued`, `running`, `waiting_approval`, `applying`, `succeeded`, `failed`, `cancelled`. The worker may move a job only as `worker_may_set` in `contract.json` allows. It never moves a job back to `queued`, and a final state is final.
@@ -58,7 +60,7 @@ A person queues a job in xStage (`create`, `prune`, `destroy` or `check`). The w
 2. **Models are never applied.** A snapshot with `source.kind: "model"` can be planned and reviewed. Nirvana marks such plans Modelled, and xFoundry's gate refuses them.
 3. **Nirvana never executes.** Manifests are parsed as data; scripts run only in the sandbox against fakes.
 4. **The gate's fingerprint fields stay stable.** xFoundry fingerprints nodes (`name`, `ready`, `unschedulable`), namespaces (`name`, `labels`), objects (`id`, `spec`, `labels`) and `crds`. Nirvana may add fields to snapshots but must not rename or drop these without a contract change.
-5. **A job never applies by itself.** Every create, prune and destroy job becomes a plan a person approves; then the gate decides. Tokens cannot queue, cancel, edit environments or open the live event stream.
+5. **A job never applies by itself.** Every create, prune and destroy job becomes a plan a person approves; then the gate decides. Power jobs change only VMs' run state, as above, and a person queues each one. Tokens cannot queue, cancel, edit environments or open the live event stream.
 6. **Names follow one rule.** `PRD-WEB{nn}` × 3 gives `PRD-WEB01..03`; a pattern without a placeholder gives `name`, `name-2`, `name-3`. The test vectors are in `contract.json`.
 
 ## Changing the contract
